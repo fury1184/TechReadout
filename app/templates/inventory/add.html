@@ -1,0 +1,763 @@
+{% extends "base.html" %}
+
+{% block title %}Add Inventory Item - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Add Inventory Item</h1>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" id="inventoryForm">
+            <input type="hidden" name="hardware_spec_id" id="hardwareSpecId" value="">
+            
+            <div class="row g-3">
+                <!-- Component Type -->
+                <div class="col-md-4">
+                    <label class="form-label">Component Type *</label>
+                    <select name="component_type_id" class="form-select" required id="componentType">
+                        {% for ct in component_types %}
+                        <option value="{{ ct.id }}" data-name="{{ ct.name }}">{{ ct.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Model Search with Lookup -->
+                <div class="col-md-5">
+                    <label class="form-label">Model *</label>
+                    <div class="input-group">
+                        <input type="text" name="custom_name" id="modelInput" class="form-control" 
+                               placeholder="e.g., RTX 4070, i7-9700K" required>
+                        <button type="button" class="btn btn-primary" id="lookupBtn">
+                            <i class="bi bi-search"></i> Lookup
+                        </button>
+                    </div>
+                    <small class="text-muted">Enter model name and click Lookup to fetch specs</small>
+                </div>
+                
+                <!-- Manufacturer -->
+                <div class="col-md-3">
+                    <label class="form-label">Manufacturer</label>
+                    <input type="text" name="custom_manufacturer" id="manufacturerInput" class="form-control" 
+                           placeholder="e.g., NVIDIA, Intel">
+                </div>
+                
+                <!-- Lookup Status -->
+                <div class="col-12" id="lookupStatus" style="display: none;">
+                    <div class="alert alert-info mb-0" id="lookupMessage">
+                        <i class="bi bi-info-circle"></i> <span></span>
+                    </div>
+                </div>
+                
+                <!-- Specs Display (populated by lookup) -->
+                <div class="col-12" id="specsDisplay" style="display: none;">
+                    <div class="card bg-light">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="flex-grow-1 me-3">
+                                    <label class="form-label small mb-1"><strong>Model Name</strong> (edit if needed)</label>
+                                    <input type="text" id="lookedUpName" class="form-control form-control-sm" placeholder="Model name from lookup">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary mt-3" id="clearSpecsBtn">
+                                    <i class="bi bi-x-circle"></i> Not right? Enter manually
+                                </button>
+                            </div>
+                            <div>
+                                <strong>Specs:</strong>
+                                <span id="specsInfo"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Manual Spec Entry (shown when lookup fails) -->
+                <div class="col-12" id="manualSpecsSection" style="display: none;">
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning bg-opacity-25">
+                            <strong><i class="bi bi-pencil"></i> Manual Spec Entry</strong>
+                            <small class="text-muted ms-2">(Optional - fill in what you know)</small>
+                        </div>
+                        <div class="card-body">
+                            <!-- CPU Specs -->
+                            <div id="cpuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Cores</label>
+                                        <input type="number" name="cpu_cores" class="form-control form-control-sm" placeholder="8">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Threads</label>
+                                        <input type="number" name="cpu_threads" class="form-control form-control-sm" placeholder="16">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Base Clock (GHz)</label>
+                                        <input type="number" name="cpu_base_clock" class="form-control form-control-sm" step="0.1" placeholder="3.6">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Boost Clock (GHz)</label>
+                                        <input type="number" name="cpu_boost_clock" class="form-control form-control-sm" step="0.1" placeholder="5.0">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="cpu_tdp" class="form-control form-control-sm" placeholder="125">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Socket</label>
+                                        <input type="text" name="cpu_socket" class="form-control form-control-sm" placeholder="LGA1700">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- GPU Specs -->
+                            <div id="gpuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">VRAM (GB)</label>
+                                        <input type="number" name="gpu_memory_gb" class="form-control form-control-sm" placeholder="12">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">VRAM Type</label>
+                                        <select name="gpu_memory_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="GDDR6X">GDDR6X</option>
+                                            <option value="GDDR6">GDDR6</option>
+                                            <option value="GDDR5">GDDR5</option>
+                                            <option value="HBM2">HBM2</option>
+                                            <option value="HBM2e">HBM2e</option>
+                                            <option value="HBM3">HBM3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Base Clock (MHz)</label>
+                                        <input type="number" name="gpu_base_clock" class="form-control form-control-sm" placeholder="1920">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Boost Clock (MHz)</label>
+                                        <input type="number" name="gpu_boost_clock" class="form-control form-control-sm" placeholder="2475">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="gpu_tdp" class="form-control form-control-sm" placeholder="200">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Motherboard Specs -->
+                            <div id="moboSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Socket</label>
+                                        <input type="text" name="mobo_socket" class="form-control form-control-sm" placeholder="AM5">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Chipset</label>
+                                        <input type="text" name="mobo_chipset" class="form-control form-control-sm" placeholder="B650">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="mobo_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="E-ATX">E-ATX</option>
+                                            <option value="ATX">ATX</option>
+                                            <option value="Micro-ATX">Micro-ATX</option>
+                                            <option value="Mini-ITX">Mini-ITX</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Memory Type</label>
+                                        <select name="mobo_memory_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="DDR5">DDR5</option>
+                                            <option value="DDR4">DDR4</option>
+                                            <option value="DDR3">DDR3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Memory Slots</label>
+                                        <input type="number" name="mobo_memory_slots" class="form-control form-control-sm" placeholder="4">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">M.2 Slots</label>
+                                        <input type="number" name="mobo_m2_slots" class="form-control form-control-sm" placeholder="2">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- PSU Specs -->
+                            <div id="psuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Wattage</label>
+                                        <input type="number" name="psu_wattage" class="form-control form-control-sm" placeholder="850">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Efficiency</label>
+                                        <select name="psu_efficiency" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="80+ Titanium">80+ Titanium</option>
+                                            <option value="80+ Platinum">80+ Platinum</option>
+                                            <option value="80+ Gold">80+ Gold</option>
+                                            <option value="80+ Silver">80+ Silver</option>
+                                            <option value="80+ Bronze">80+ Bronze</option>
+                                            <option value="80+">80+</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Modular</label>
+                                        <select name="psu_modular" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="Fully Modular">Fully Modular</option>
+                                            <option value="Semi-Modular">Semi-Modular</option>
+                                            <option value="Non-Modular">Non-Modular</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="psu_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="ATX">ATX</option>
+                                            <option value="SFX">SFX</option>
+                                            <option value="SFX-L">SFX-L</option>
+                                            <option value="TFX">TFX</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- RAM Specs -->
+                            <div id="ramSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Total Capacity (GB)</label>
+                                        <input type="number" name="ram_capacity" class="form-control form-control-sm" placeholder="32">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="ram_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="DDR5">DDR5</option>
+                                            <option value="DDR4">DDR4</option>
+                                            <option value="DDR3">DDR3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Speed (MHz)</label>
+                                        <input type="number" name="ram_speed" class="form-control form-control-sm" placeholder="6000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">CAS Latency</label>
+                                        <input type="text" name="ram_timings" class="form-control form-control-sm" placeholder="CL30">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Storage Specs -->
+                            <div id="storageSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="storage_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="NVMe SSD">NVMe SSD</option>
+                                            <option value="SATA SSD">SATA SSD</option>
+                                            <option value="HDD">HDD</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Interface</label>
+                                        <select name="storage_interface" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="PCIe 5.0 x4">PCIe 5.0 x4</option>
+                                            <option value="PCIe 4.0 x4">PCIe 4.0 x4</option>
+                                            <option value="PCIe 3.0 x4">PCIe 3.0 x4</option>
+                                            <option value="SATA III">SATA III</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Read Speed (MB/s)</label>
+                                        <input type="number" name="storage_read_speed" class="form-control form-control-sm" placeholder="7000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Write Speed (MB/s)</label>
+                                        <input type="number" name="storage_write_speed" class="form-control form-control-sm" placeholder="6000">
+                                    </div>
+                                </div>
+                                <small class="text-muted">Note: Include capacity in the model name above (e.g., "Samsung 990 Pro 2TB")</small>
+                            </div>
+                            
+                            <!-- Cooler Specs -->
+                            <div id="coolerSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="cooler_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="AIO 360mm">AIO 360mm</option>
+                                            <option value="AIO 280mm">AIO 280mm</option>
+                                            <option value="AIO 240mm">AIO 240mm</option>
+                                            <option value="AIO 120mm">AIO 120mm</option>
+                                            <option value="Air">Air Tower</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Fan Size (mm)</label>
+                                        <select name="cooler_fan_size" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="140">140mm</option>
+                                            <option value="120">120mm</option>
+                                            <option value="92">92mm</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Height (mm)</label>
+                                        <input type="number" name="cooler_height" class="form-control form-control-sm" placeholder="158">
+                                        <small class="text-muted">Air only</small>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="cooler_tdp_rating" class="form-control form-control-sm" placeholder="250">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Socket Support</label>
+                                        <input type="text" name="cooler_socket_support" class="form-control form-control-sm" placeholder="LGA1700, AM5">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Case Specs -->
+                            <div id="caseSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="case_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="Full Tower">Full Tower</option>
+                                            <option value="Mid Tower">Mid Tower</option>
+                                            <option value="Mini Tower">Mini Tower</option>
+                                            <option value="Mini-ITX">Mini-ITX</option>
+                                            <option value="SFF">SFF</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max GPU Length (mm)</label>
+                                        <input type="number" name="case_max_gpu_length" class="form-control form-control-sm" placeholder="380">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max Cooler Height (mm)</label>
+                                        <input type="number" name="case_max_cooler_height" class="form-control form-control-sm" placeholder="170">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Fan Specs -->
+                            <div id="fanSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Size (mm)</label>
+                                        <select name="fan_size" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="200">200mm</option>
+                                            <option value="140">140mm</option>
+                                            <option value="120">120mm</option>
+                                            <option value="92">92mm</option>
+                                            <option value="80">80mm</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max RPM</label>
+                                        <input type="number" name="fan_rpm_max" class="form-control form-control-sm" placeholder="2000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Airflow (CFM)</label>
+                                        <input type="number" name="fan_airflow" class="form-control form-control-sm" step="0.1" placeholder="60.5">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Generic specs for other types -->
+                            <div id="genericSpecs" class="manual-specs" style="display: none;">
+                                <p class="text-muted small mb-0">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Manual specs not available for this component type. Add details in the Notes field below.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quantity -->
+                <div class="col-md-3">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" name="quantity" class="form-control" value="1" min="1">
+                </div>
+                
+                <!-- Purchase Price -->
+                <div class="col-md-3">
+                    <label class="form-label">Purchase Price</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="purchase_price" class="form-control" step="0.01">
+                    </div>
+                </div>
+                
+                <!-- Condition -->
+                <div class="col-md-3">
+                    <label class="form-label">Condition</label>
+                    <select name="condition" class="form-select">
+                        <option value="New">New</option>
+                        <option value="Used">Used</option>
+                        <option value="Refurbished">Refurbished</option>
+                        <option value="For Parts">For Parts</option>
+                    </select>
+                </div>
+                
+                <!-- Status -->
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="Available">Available</option>
+                        <option value="In Use">In Use</option>
+                        <option value="Reserved">Reserved</option>
+                        <option value="Sold">Sold</option>
+                        <option value="Disposed">Disposed</option>
+                    </select>
+                </div>
+                
+                <!-- Location -->
+                <div class="col-md-6">
+                    <label class="form-label">Location</label>
+                    <input type="text" name="location" class="form-control" placeholder="e.g., Shelf A, Storage Bin 3">
+                </div>
+                
+                <!-- Notes -->
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Any additional notes..."></textarea>
+                </div>
+                
+                <div class="col-12">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-lg"></i> Add to Inventory
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const lookupBtn = document.getElementById('lookupBtn');
+const modelInput = document.getElementById('modelInput');
+const manufacturerInput = document.getElementById('manufacturerInput');
+const componentType = document.getElementById('componentType');
+const hardwareSpecId = document.getElementById('hardwareSpecId');
+const lookupStatus = document.getElementById('lookupStatus');
+const lookupMessage = document.getElementById('lookupMessage');
+const specsDisplay = document.getElementById('specsDisplay');
+const specsInfo = document.getElementById('specsInfo');
+const lookedUpName = document.getElementById('lookedUpName');
+const inventoryForm = document.getElementById('inventoryForm');
+const manualSpecsSection = document.getElementById('manualSpecsSection');
+const clearSpecsBtn = document.getElementById('clearSpecsBtn');
+
+// Track lookup state to avoid redundant lookups
+let lookupAttempted = false;
+let manualEntryMode = false;
+
+// Sync lookedUpName to modelInput (so edits persist)
+lookedUpName.addEventListener('input', function() {
+    modelInput.value = lookedUpName.value;
+});
+
+// "Not right? Enter manually" button handler
+clearSpecsBtn.addEventListener('click', function() {
+    // Clear the linked spec
+    hardwareSpecId.value = '';
+    
+    // Hide the specs display
+    specsDisplay.style.display = 'none';
+    
+    // Mark as manual entry mode - don't re-lookup on submit
+    manualEntryMode = true;
+    
+    // Show manual entry form
+    showManualSpecs(true);
+    
+    // Update status message
+    showStatus('Specs cleared. Enter details manually below.', 'info');
+});
+
+// Map component types to spec divs
+const specsDivMap = {
+    'CPU': 'cpuSpecs',
+    'GPU': 'gpuSpecs',
+    'Motherboard': 'moboSpecs',
+    'PSU': 'psuSpecs',
+    'RAM': 'ramSpecs',
+    'Storage': 'storageSpecs',
+    'Cooler': 'coolerSpecs',
+    'Case': 'caseSpecs',
+    'Fan': 'fanSpecs'
+};
+
+// Show/hide manual specs based on component type
+function showManualSpecs(show, ctName = null) {
+    if (!show) {
+        manualSpecsSection.style.display = 'none';
+        return;
+    }
+    
+    // Hide all spec divs first
+    document.querySelectorAll('.manual-specs').forEach(div => div.style.display = 'none');
+    
+    // Get component type if not provided
+    if (!ctName) {
+        const ctSelect = componentType.options[componentType.selectedIndex];
+        ctName = ctSelect.dataset.name;
+    }
+    
+    // Show the right spec div
+    const specDiv = specsDivMap[ctName];
+    if (specDiv) {
+        document.getElementById(specDiv).style.display = 'block';
+    } else {
+        document.getElementById('genericSpecs').style.display = 'block';
+    }
+    
+    manualSpecsSection.style.display = 'block';
+}
+
+// Update manual specs when component type changes
+componentType.addEventListener('change', function() {
+    // If manual specs are visible, update which fields show
+    if (manualSpecsSection.style.display !== 'none') {
+        const ctSelect = componentType.options[componentType.selectedIndex];
+        showManualSpecs(true, ctSelect.dataset.name);
+    }
+    // Reset lookup state when type changes
+    hardwareSpecId.value = '';
+    specsDisplay.style.display = 'none';
+});
+
+// Manual lookup button
+lookupBtn.addEventListener('click', async function() {
+    await doLookup();
+});
+
+// Form submit - only lookup if never attempted and not in manual mode
+inventoryForm.addEventListener('submit', async function(e) {
+    const query = modelInput.value.trim();
+    
+    // If no model entered, let HTML validation handle it
+    if (!query) return;
+    
+    // If already have a spec linked, just submit
+    if (hardwareSpecId.value) return;
+    
+    // If user chose manual entry or lookup was already attempted, just submit
+    if (manualEntryMode || lookupAttempted) return;
+    
+    // First time submitting without lookup - try once
+    e.preventDefault();
+    
+    showStatus('Looking up specs before saving...', 'info');
+    await doLookup(true);  // silent mode
+    
+    // Now submit the form (whether lookup succeeded or failed)
+    inventoryForm.submit();
+});
+
+async function doLookup(silent = false) {
+    const query = modelInput.value.trim();
+    if (!query) {
+        if (!silent) showStatus('Please enter a model name', 'warning');
+        return;
+    }
+    
+    // Mark that we've attempted a lookup for this query
+    lookupAttempted = true;
+    
+    // Get component type name
+    const ctSelect = componentType.options[componentType.selectedIndex];
+    const ctName = ctSelect.dataset.name;
+    
+    // Show loading
+    lookupBtn.disabled = true;
+    lookupBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Looking up...';
+    if (!silent) showStatus('Searching for specs...', 'info');
+    
+    try {
+        const response = await fetch('/api/lookup', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                query: query,
+                component_type: ctName
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.found) {
+            // Populate form
+            hardwareSpecId.value = data.spec_id;
+            
+            if (data.manufacturer) {
+                manufacturerInput.value = data.manufacturer;
+            }
+            if (data.model) {
+                modelInput.value = data.model;
+            }
+            
+            // Update component type if different
+            if (data.component_type) {
+                for (let opt of componentType.options) {
+                    if (opt.dataset.name === data.component_type) {
+                        componentType.value = opt.value;
+                        break;
+                    }
+                }
+            }
+            
+            // Build specs summary
+            let specsSummary = [];
+            if (data.component_type === 'GPU') {
+                if (data.gpu_memory_size) specsSummary.push(`${Math.round(data.gpu_memory_size/1024)}GB ${data.gpu_memory_type || 'VRAM'}`);
+                if (data.gpu_boost_clock) specsSummary.push(`${data.gpu_boost_clock}MHz`);
+                if (data.gpu_tdp) specsSummary.push(`${data.gpu_tdp}W TDP`);
+            } else if (data.component_type === 'CPU') {
+                if (data.cpu_cores) specsSummary.push(`${data.cpu_cores}C/${data.cpu_threads || data.cpu_cores}T`);
+                if (data.cpu_base_clock) specsSummary.push(`${data.cpu_base_clock}GHz`);
+                if (data.cpu_socket) specsSummary.push(data.cpu_socket);
+                if (data.cpu_tdp) specsSummary.push(`${data.cpu_tdp}W`);
+            } else if (data.component_type === 'Motherboard') {
+                if (data.mobo_chipset) specsSummary.push(data.mobo_chipset);
+                if (data.mobo_socket) specsSummary.push(data.mobo_socket);
+                if (data.mobo_form_factor) specsSummary.push(data.mobo_form_factor);
+                if (data.mobo_memory_slots && data.mobo_memory_type) {
+                    specsSummary.push(`${data.mobo_memory_slots}x ${data.mobo_memory_type}`);
+                } else if (data.mobo_memory_type) {
+                    specsSummary.push(data.mobo_memory_type);
+                }
+                if (data.mobo_pcie_x16_slots) specsSummary.push(`${data.mobo_pcie_x16_slots}x PCIe x16`);
+            } else if (data.component_type === 'PSU') {
+                if (data.psu_wattage) specsSummary.push(`${data.psu_wattage}W`);
+                if (data.psu_efficiency) specsSummary.push(data.psu_efficiency);
+                if (data.psu_modular) specsSummary.push(data.psu_modular);
+                if (data.psu_form_factor) specsSummary.push(data.psu_form_factor);
+            } else if (data.component_type === 'RAM') {
+                if (data.ram_size) specsSummary.push(`${data.ram_size}GB`);
+                if (data.ram_type) specsSummary.push(data.ram_type);
+                if (data.ram_speed) specsSummary.push(`${data.ram_speed}MHz`);
+                if (data.ram_cas_latency) specsSummary.push(data.ram_cas_latency);
+            } else if (data.component_type === 'Storage') {
+                if (data.storage_type) specsSummary.push(data.storage_type);
+                if (data.storage_interface) specsSummary.push(data.storage_interface);
+                if (data.storage_read_speed) specsSummary.push(`${data.storage_read_speed}MB/s read`);
+            } else if (data.component_type === 'Cooler') {
+                if (data.cooler_type) specsSummary.push(data.cooler_type);
+                if (data.cooler_fan_size) specsSummary.push(`${data.cooler_fan_size}mm fans`);
+                if (data.cooler_tdp_rating) specsSummary.push(`${data.cooler_tdp_rating}W TDP`);
+                if (data.cooler_height) specsSummary.push(`${data.cooler_height}mm tall`);
+                if (data.cooler_socket_support) specsSummary.push(data.cooler_socket_support);
+            } else if (data.component_type === 'Case') {
+                if (data.case_form_factor) specsSummary.push(data.case_form_factor);
+                if (data.case_max_gpu_length) specsSummary.push(`GPU: ${data.case_max_gpu_length}mm`);
+                if (data.case_max_cooler_height) specsSummary.push(`Cooler: ${data.case_max_cooler_height}mm`);
+            } else if (data.component_type === 'Fan') {
+                if (data.fan_size) specsSummary.push(`${data.fan_size}mm`);
+                if (data.fan_rpm_max) specsSummary.push(`${data.fan_rpm_max}RPM`);
+                if (data.fan_airflow) specsSummary.push(`${data.fan_airflow}CFM`);
+            }
+            
+            if (specsSummary.length > 0) {
+                specsInfo.textContent = specsSummary.join(' • ');
+                specsDisplay.style.display = 'block';
+                
+                // Populate editable model name
+                lookedUpName.value = data.model || '';
+            }
+            
+            // Hide manual specs when lookup succeeds
+            showManualSpecs(false);
+            manualEntryMode = false;  // Got valid specs, not in manual mode;
+            
+            if (!silent) {
+                let sourceText = data.source === 'database' ? 'Found in database' : 'Fetched from ';
+                if (data.source !== 'database') {
+                    if (data.source === 'amazon') {
+                        sourceText += 'Amazon';
+                    } else if (data.source === 'manufacturer') {
+                        sourceText += 'manufacturer site';
+                    } else if (data.source === 'intel_ark') {
+                        sourceText += 'Intel ARK';
+                    } else if (data.source === 'techpowerup') {
+                        sourceText += 'TechPowerUp';
+                    } else {
+                        sourceText += 'web';
+                    }
+                }
+                showStatus(`✓ ${sourceText}: ${data.manufacturer || ''} ${data.model}`, 'success');
+            }
+            
+        } else {
+            hardwareSpecId.value = '';
+            specsDisplay.style.display = 'none';
+            
+            // Show manual specs entry when lookup fails
+            if (!silent) {
+                manualEntryMode = true;  // Don't re-lookup on submit
+                showManualSpecs(true);
+            }
+            
+            if (!silent) {
+                if (data.no_token) {
+                    showStatus('⚠️ Spec lookup not configured. Set SCRAPEDO_TOKEN in .env file. Enter specs manually below.', 'warning');
+                } else if (data.credits_exhausted) {
+                    showStatus('🔴 Scrape.Do API credits exhausted! Enter specs manually below.', 'danger');
+                } else if (data.unsupported_type) {
+                    showStatus('ℹ️ ' + data.message + ' Enter specs manually below if needed.', 'info');
+                } else {
+                    showStatus('⚠️ No specs found. Enter specs manually below or save as-is.', 'warning');
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('Lookup error:', error);
+        if (!silent) {
+            manualEntryMode = true;  // Don't re-lookup on submit
+            showManualSpecs(true);
+            showStatus('⚠️ Lookup failed. Enter specs manually below or save as-is.', 'warning');
+        }
+    } finally {
+        lookupBtn.disabled = false;
+        lookupBtn.innerHTML = '<i class="bi bi-search"></i> Lookup';
+    }
+}
+
+function showStatus(message, type) {
+    lookupStatus.style.display = 'block';
+    lookupMessage.className = `alert alert-${type} mb-0`;
+    lookupMessage.querySelector('span').textContent = message;
+}
+
+// Clear spec link and reset lookup state when model changes
+modelInput.addEventListener('input', function() {
+    hardwareSpecId.value = '';
+    specsDisplay.style.display = 'none';
+    lookedUpName.value = '';  // Clear looked up name
+    // Reset lookup state for new query
+    lookupAttempted = false;
+    manualEntryMode = false;
+    // Hide manual specs if visible (user is typing new model)
+    manualSpecsSection.style.display = 'none';
+});
+</script>
+{% endblock %}

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TechReadout{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-width: 250px;
+        }
+        body {
+            min-height: 100vh;
+        }
+        .sidebar {
+            width: var(--sidebar-width);
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            background: #212529;
+            padding-top: 1rem;
+            z-index: 100;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 0.75rem 1.25rem;
+            border-radius: 0;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+        }
+        .sidebar .nav-link i {
+            margin-right: 0.75rem;
+        }
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 2rem;
+        }
+        .brand {
+            color: #fff;
+            font-size: 1.25rem;
+            font-weight: 600;
+            padding: 0.5rem 1.25rem 1.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 1rem;
+        }
+        .sidebar-footer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem 1.25rem;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.8rem;
+            color: rgba(255,255,255,0.5);
+        }
+        .sidebar-footer a {
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+        }
+        .sidebar-footer a:hover {
+            color: #fff;
+        }
+        .kofi-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: #ff5e5b;
+            color: #fff !important;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+        }
+        .kofi-btn:hover {
+            background: #ff4442;
+        }
+        .stat-card {
+            border-radius: 0.5rem;
+            transition: transform 0.15s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+        .table-hover tbody tr:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="brand">
+            <i class="bi bi-cpu"></i> TechReadout
+        </div>
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">
+                    <i class="bi bi-speedometer2"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'inventory' in request.endpoint %}active{% endif %}" href="{{ url_for('main.inventory_list') }}">
+                    <i class="bi bi-box-seam"></i> Inventory
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'specs' in request.endpoint %}active{% endif %}" href="{{ url_for('main.specs_list') }}">
+                    <i class="bi bi-database"></i> Hardware Specs
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'hosts' in request.endpoint %}active{% endif %}" href="{{ url_for('main.hosts_list') }}">
+                    <i class="bi bi-pc-display"></i> Hosts
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'planner' in request.endpoint %}active{% endif %}" href="{{ url_for('planner.index') }}">
+                    <i class="bi bi-tools"></i> Build Planner
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'scraper' in request.endpoint %}active{% endif %}" href="{{ url_for('scraper.index') }}">
+                    <i class="bi bi-search"></i> Spec Lookup
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if 'backup' in request.endpoint %}active{% endif %}" href="{{ url_for('backup.index') }}">
+                    <i class="bi bi-archive"></i> Backup
+                </a>
+            </li>
+        </ul>
+        <div class="sidebar-footer">
+            <div>Made by <a href="https://github.com/fury1184" target="_blank">fury1184</a></div>
+            <a href="https://ko-fi.com/fury1184" target="_blank" class="kofi-btn">
+                <i class="bi bi-cup-hot-fill"></i> Buy me a coffee
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Version indicator -->
+    <div class="position-fixed bottom-0 end-0 p-2 small" style="z-index: 1000;">
+        <span class="badge bg-secondary">v1.4.8</span>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

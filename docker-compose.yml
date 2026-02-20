@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    container_name: techreadout-app
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=mysql+pymysql://techreadout:techreadout@db:3306/techreadout
+      - SECRET_KEY=change-this-in-production
+      - SCRAPEDO_TOKEN=${SCRAPEDO_TOKEN:-}
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: mariadb:11
+    container_name: techreadout-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=techreadout
+      - MYSQL_USER=techreadout
+      - MYSQL_PASSWORD=techreadout
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  mariadb_data:

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}New Build Plan - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">New Build Plan</h1>
+    <a href="{{ url_for('planner.index') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Build Name *</label>
+                    <input type="text" name="name" class="form-control" required placeholder="e.g., Gaming PC 2024">
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Use Case</label>
+                    <select name="use_case" class="form-select">
+                        <option value="">Select...</option>
+                        <option value="Gaming">Gaming</option>
+                        <option value="Workstation">Workstation</option>
+                        <option value="Server">Server</option>
+                        <option value="HTPC">HTPC</option>
+                        <option value="NAS">NAS</option>
+                        <option value="Development">Development</option>
+                        <option value="General">General Use</option>
+                    </select>
+                </div>
+                
+                <div class="col-12">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control" rows="2" placeholder="What is this build for?"></textarea>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Minimum RAM (GB)</label>
+                    <input type="number" name="min_ram_gb" class="form-control" placeholder="e.g., 32">
+                    <small class="text-muted">Build planner will check if you have enough RAM available</small>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Minimum GPU VRAM (GB)</label>
+                    <input type="number" name="min_vram_gb" class="form-control" placeholder="e.g., 8">
+                    <small class="text-muted">Filter GPUs by minimum VRAM</small>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">CPU Socket</label>
+                    <select name="cpu_socket" class="form-select">
+                        <option value="">Any Socket</option>
+                        {% for socket in sockets %}
+                        <option value="{{ socket }}">{{ socket }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Filter CPUs, motherboards, coolers by socket</small>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Budget</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="budget" class="form-control" step="0.01" placeholder="Optional">
+                    </div>
+                </div>
+                
+                <div class="col-12 mt-4">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-lg"></i> Create Build Plan
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

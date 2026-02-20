@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Hardware Specs - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Hardware Specs Database</h1>
+    <span class="badge bg-primary">{{ specs|length }} items</span>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" class="form-control" value="{{ search or '' }}" placeholder="Model or manufacturer...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Component Type</label>
+                <select name="type" class="form-select">
+                    <option value="">All Types</option>
+                    {% for ct in component_types %}
+                    <option value="{{ ct.name }}" {% if current_type == ct.name %}selected{% endif %}>
+                        {{ ct.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Manufacturer</label>
+                <select name="manufacturer" class="form-select">
+                    <option value="">All</option>
+                    {% for mfr in manufacturers %}
+                    <option value="{{ mfr }}" {% if current_manufacturer == mfr %}selected{% endif %}>
+                        {{ mfr }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-secondary">Search</button>
+                <a href="{{ url_for('main.specs_list') }}" class="btn btn-link">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Specs Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Type</th>
+                    <th>Manufacturer</th>
+                    <th>Key Specs</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for spec in specs %}
+                <tr>
+                    <td><strong>{{ spec.model }}</strong></td>
+                    <td>{{ spec.component_type.name }}</td>
+                    <td>{{ spec.manufacturer or '-' }}</td>
+                    <td>
+                        {% if spec.component_type.name == 'CPU' %}
+                            {{ spec.cpu_cores or '?' }} cores / {{ spec.cpu_threads or '?' }} threads
+                            {% if spec.cpu_base_clock %}@ {{ spec.cpu_base_clock }} GHz{% endif %}
+                        {% elif spec.component_type.name == 'GPU' %}
+                            {% if spec.gpu_memory_size %}{{ spec.gpu_memory_size }} MB{% endif %}
+                            {{ spec.gpu_memory_type or '' }}
+                            {% if spec.gpu_tdp %}{{ spec.gpu_tdp }}W{% endif %}
+                        {% elif spec.component_type.name == 'RAM' %}
+                            {{ spec.ram_size or '?' }} GB {{ spec.ram_type or '' }} @ {{ spec.ram_speed or '?' }} MHz
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if spec.source_url %}
+                        <a href="{{ spec.source_url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-4">
+                        No hardware specs found. <a href="{{ url_for('scraper.index') }}">Run the scraper</a> to populate the database.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Inventory</h1>
+    <div>
+        {% if not show_all and sold_count > 0 %}
+        <a href="{{ url_for('main.inventory_list', show_all=1) }}" class="btn btn-outline-secondary me-2">
+            <i class="bi bi-eye"></i> Show Sold ({{ sold_count }})
+        </a>
+        {% elif show_all %}
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary me-2">
+            <i class="bi bi-eye-slash"></i> Hide Sold
+        </a>
+        {% endif %}
+        <a href="{{ url_for('main.inventory_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Add Item
+        </a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Component Type</label>
+                <select name="type" class="form-select">
+                    <option value="">All Types</option>
+                    {% for ct in component_types %}
+                    <option value="{{ ct.name }}" {% if current_type == ct.name %}selected{% endif %}>
+                        {{ ct.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="Available" {% if current_status == 'Available' %}selected{% endif %}>Available</option>
+                    <option value="In Use" {% if current_status == 'In Use' %}selected{% endif %}>In Use</option>
+                    <option value="Reserved" {% if current_status == 'Reserved' %}selected{% endif %}>Reserved</option>
+                    <option value="Sold" {% if current_status == 'Sold' %}selected{% endif %}>Sold</option>
+                    <option value="Disposed" {% if current_status == 'Disposed' %}selected{% endif %}>Disposed</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Assignment</label>
+                <select name="assigned" class="form-select">
+                    <option value="">All</option>
+                    <option value="unassigned" {% if current_assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                    <option value="assigned" {% if current_assigned == 'assigned' %}selected{% endif %}>Assigned to Host</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-secondary">Filter</button>
+                <a href="{{ url_for('main.inventory_list') }}" class="btn btn-link">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Inventory Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Type</th>
+                    <th>Qty</th>
+                    <th>Cost</th>
+                    <th>Condition</th>
+                    <th>Status</th>
+                    <th>Location / Host</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr class="{{ 'table-secondary' if item.status == 'Sold' else '' }}">
+                    <td>
+                        <a href="{{ url_for('main.inventory_detail', id=item.id) }}" class="text-decoration-none text-dark">
+                            <strong>{{ item.display_name }}</strong>
+                        </a>
+                        {% if item.status == 'Sold' %}
+                            {% if item.sale_price %}
+                            <br><small class="text-muted">
+                                Sold: ${{ item.sale_price }}
+                                {% if item.profit is not none %}
+                                <span class="{{ 'text-success' if item.profit >= 0 else 'text-danger' }}">
+                                    ({{ '+' if item.profit >= 0 else '' }}${{ "%.2f"|format(item.profit) }})
+                                </span>
+                                {% endif %}
+                            </small>
+                            {% endif %}
+                        {% elif item.notes %}
+                        <br><small class="text-muted">{{ item.notes[:50] }}{% if item.notes|length > 50 %}...{% endif %}</small>
+                        {% endif %}
+                    </td>
+                    <td>{{ item.component_type.name }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>
+                        {% if item.purchase_price %}
+                        ${{ item.purchase_price }}
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if item.item_condition == 'New' else 'secondary' }}">
+                            {{ item.item_condition }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if item.status == 'Available' else 'primary' if item.status == 'In Use' else 'warning' if item.status == 'Reserved' else 'dark' if item.status == 'Sold' else 'secondary' }}">
+                            {{ item.status }}
+                        </span>
+                        {% if item.status == 'Sold' and item.sold_to %}
+                        <br><small class="text-muted">→ {{ item.sold_to }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.assigned_to_host_id %}
+                        <a href="{{ url_for('main.hosts_detail', id=item.assigned_to_host_id) }}" class="text-decoration-none">
+                            <i class="bi bi-pc-display"></i> {{ item.assigned_host.hostname if item.assigned_host else 'Unknown' }}
+                        </a>
+                        {% elif item.status == 'Sold' and item.sale_date %}
+                        {{ item.sale_date.strftime('%Y-%m-%d') }}
+                        {% else %}
+                        {{ item.location or '-' }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('main.inventory_detail', id=item.id) }}" class="btn btn-outline-info" title="View Details">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% if item.status == 'Available' and not item.assigned_to_host_id %}
+                            <a href="{{ url_for('main.inventory_assign', id=item.id) }}" class="btn btn-outline-success" title="Assign to Host">
+                                <i class="bi bi-link"></i>
+                            </a>
+                            <a href="{{ url_for('main.inventory_sell', id=item.id) }}" class="btn btn-outline-warning" title="Mark as Sold">
+                                <i class="bi bi-cash"></i>
+                            </a>
+                            {% elif item.assigned_to_host_id %}
+                            <form action="{{ url_for('main.inventory_unassign', id=item.id) }}" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-outline-warning" title="Unassign from Host" 
+                                        onclick="return confirm('Return this item to available inventory?')">
+                                    <i class="bi bi-link-45deg"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                            {% if item.status != 'Sold' %}
+                            <a href="{{ url_for('main.inventory_edit', id=item.id) }}" class="btn btn-outline-primary" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            {% endif %}
+                            <form action="{{ url_for('main.inventory_delete', id=item.id) }}" method="post" class="d-inline" 
+                                  onsubmit="return confirm('Delete this item?')">
+                                <button type="submit" class="btn btn-outline-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">
+                        No inventory items found.
+                        <a href="{{ url_for('main.inventory_add') }}">Add your first item</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

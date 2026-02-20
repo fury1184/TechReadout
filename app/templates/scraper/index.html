@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Spec Lookup - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Hardware Spec Lookup</h1>
+</div>
+
+<!-- How It Works -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-info-circle"></i> How Spec Lookup Works</h5>
+    </div>
+    <div class="card-body">
+        <p>TechReadout uses <strong>on-demand lookup</strong> instead of bulk scraping. When you add an inventory item:</p>
+        <ol>
+            <li>Type a model name (e.g., "RTX 4070", "i7-9700K", "ROG STRIX B550-F")</li>
+            <li>Click <strong>Lookup</strong> to fetch specs automatically</li>
+            <li>Specs are saved to your local database and cached forever</li>
+        </ol>
+        <p class="mb-0">This approach is more efficient — you only fetch specs for parts you actually own.</p>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row g-4 mb-4">
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h2 class="display-6 text-primary">{{ total_specs }}</h2>
+                <p class="text-muted mb-0">Cached Specs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h2 class="display-6 text-success">{{ cpu_count }}</h2>
+                <p class="text-muted mb-0">CPUs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h2 class="display-6 text-info">{{ gpu_count }}</h2>
+                <p class="text-muted mb-0">GPUs</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h2 class="display-6 text-warning">{{ mobo_count }}</h2>
+                <p class="text-muted mb-0">Motherboards</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body">
+                <h2 class="display-6 text-danger">{{ psu_count }}</h2>
+                <p class="text-muted mb-0">PSUs</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Sources -->
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="card-title mb-0"><i class="bi bi-globe"></i> Data Sources</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <h6><i class="bi bi-cpu text-success"></i> CPUs</h6>
+                <p class="small text-muted mb-1">Intel ARK + TechPowerUp</p>
+                <ul class="small mb-0">
+                    <li>Cores, Threads</li>
+                    <li>Base & Boost Clock</li>
+                    <li>TDP, Socket</li>
+                </ul>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-gpu-card text-info"></i> GPUs</h6>
+                <p class="small text-muted mb-1">TechPowerUp + Manufacturer Sites</p>
+                <ul class="small mb-0">
+                    <li>VRAM Size & Type</li>
+                    <li>Base & Boost Clock</li>
+                    <li>TDP</li>
+                </ul>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-motherboard text-warning"></i> Motherboards</h6>
+                <p class="small text-muted mb-1">Amazon + Manufacturer Sites</p>
+                <ul class="small mb-0">
+                    <li>Socket, Chipset</li>
+                    <li>Form Factor</li>
+                    <li>Memory, PCIe, M.2</li>
+                </ul>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-lightning-charge text-danger"></i> PSUs</h6>
+                <p class="small text-muted mb-1">Amazon</p>
+                <ul class="small mb-0">
+                    <li>Wattage</li>
+                    <li>Efficiency (80+)</li>
+                    <li>Modular Type</li>
+                </ul>
+            </div>
+        </div>
+        <hr>
+        <div class="row g-3">
+            <div class="col-md-3">
+                <h6><i class="bi bi-memory text-primary"></i> RAM</h6>
+                <p class="small text-muted mb-0">Amazon</p>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-device-ssd text-secondary"></i> Storage</h6>
+                <p class="small text-muted mb-0">Amazon</p>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-fan text-info"></i> Coolers & Fans</h6>
+                <p class="small text-muted mb-0">Amazon</p>
+            </div>
+            <div class="col-md-3">
+                <h6><i class="bi bi-pc-display text-dark"></i> Cases</h6>
+                <p class="small text-muted mb-0">Amazon</p>
+            </div>
+        </div>
+        <hr>
+        <p class="small text-muted mb-1">
+            <strong>GPU manufacturers:</strong> XFX, ASUS, MSI, Gigabyte, EVGA, Sapphire, PowerColor, Zotac, PNY
+        </p>
+        <p class="small text-muted mb-0">
+            <strong>Motherboard manufacturers:</strong> ASUS, MSI, Gigabyte, ASRock, EVGA
+        </p>
+    </div>
+</div>
+
+<!-- API Status -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-key"></i> Scrape.Do API Status</h5>
+    </div>
+    <div class="card-body">
+        {% if scrapedo_configured %}
+        <div class="alert alert-success mb-0">
+            <i class="bi bi-check-circle"></i> <strong>Configured</strong> — Spec lookup is enabled.
+            <br><small class="text-muted">Manage your API credits at <a href="https://scrape.do" target="_blank">scrape.do</a></small>
+        </div>
+        {% else %}
+        <div class="alert alert-warning mb-0">
+            <i class="bi bi-exclamation-triangle"></i> <strong>Not Configured</strong> — Spec lookup is disabled.
+            <br><small>Set <code>SCRAPEDO_TOKEN</code> in your <code>.env</code> file. See README for setup instructions.</small>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="text-center mt-4">
+    <a href="{{ url_for('main.inventory_add') }}" class="btn btn-primary btn-lg">
+        <i class="bi bi-plus-lg"></i> Add Inventory Item
+    </a>
+</div>
+{% endblock %}

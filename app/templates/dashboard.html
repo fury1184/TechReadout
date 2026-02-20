@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Hardware Specs</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_specs }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50">
+                        <i class="bi bi-database"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Inventory Items</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_inventory }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Available</h6>
+                        <h2 class="card-title mb-0">{{ stats.available_items }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-secondary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Hosts</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_hosts }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50">
+                        <i class="bi bi-pc-display"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Component Breakdown -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Inventory by Component</h5>
+            </div>
+            <div class="card-body">
+                {% if component_counts %}
+                    <table class="table table-sm">
+                        <tbody>
+                            {% for name, count in component_counts %}
+                            <tr>
+                                <td>{{ name }}</td>
+                                <td class="text-end">
+                                    <span class="badge bg-primary">{{ count }}</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="text-muted mb-0">No inventory items yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Scrape Jobs -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Scrape Jobs</h5>
+                <a href="{{ url_for('scraper.index') }}" class="btn btn-sm btn-outline-primary">
+                    View All
+                </a>
+            </div>
+            <div class="card-body">
+                {% if stats.recent_scrapes %}
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Items</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in stats.recent_scrapes %}
+                            <tr>
+                                <td>{{ job.source }}</td>
+                                <td>{{ job.component_type or '-' }}</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if job.status == 'Completed' else 'danger' if job.status == 'Failed' else 'warning' }}">
+                                        {{ job.status }}
+                                    </span>
+                                </td>
+                                <td>{{ job.items_added }}/{{ job.items_found }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <p class="text-muted mb-0">No scrape jobs yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Quick Actions</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('main.inventory_add') }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Add Inventory Item
+            </a>
+            <a href="{{ url_for('main.hosts_add') }}" class="btn btn-outline-primary">
+                <i class="bi bi-pc-display"></i> Add Host
+            </a>
+            <a href="{{ url_for('planner.new_plan') }}" class="btn btn-outline-primary">
+                <i class="bi bi-tools"></i> New Build Plan
+            </a>
+            <a href="{{ url_for('scraper.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-cloud-download"></i> Run Scraper
+            </a>
+            <a href="{{ url_for('backup.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-archive"></i> Backup
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

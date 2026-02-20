@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+
+{% block title %}{{ plan.name }} - Build Planner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">{{ plan.name }}</h1>
+        {% if plan.description %}
+        <p class="text-muted mb-0">{{ plan.description }}</p>
+        {% endif %}
+    </div>
+    <div>
+        <a href="{{ url_for('planner.edit_plan', id=plan.id) }}" class="btn btn-outline-secondary">
+            <i class="bi bi-pencil"></i> Edit
+        </a>
+        <a href="{{ url_for('planner.index') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<!-- Build Info -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="h6 text-muted">Status</div>
+                <span class="badge bg-{{ 'success' if plan.status == 'Complete' else 'primary' if plan.status == 'Ready' else 'warning' if plan.status == 'Building' else 'secondary' }} fs-6">
+                    {{ plan.status }}
+                </span>
+            </div>
+        </div>
+    </div>
+    {% if plan.use_case %}
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="h6 text-muted">Use Case</div>
+                <div class="fw-bold">{{ plan.use_case }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if plan.cpu_socket %}
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="h6 text-muted">Socket</div>
+                <div class="fw-bold">{{ plan.cpu_socket }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% if plan.budget %}
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <div class="h6 text-muted">Budget</div>
+                <div class="fw-bold">${{ plan.budget }}</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Availability Check -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-check2-square"></i> Parts Availability Check</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <!-- RAM Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>RAM</strong>
+                        {% if availability.ram.status == 'ok' %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> OK</span>
+                        {% elif availability.ram.status == 'insufficient' %}
+                        <span class="badge bg-danger"><i class="bi bi-x"></i> Insufficient</span>
+                        {% else %}
+                        <span class="badge bg-secondary">?</span>
+                        {% endif %}
+                    </div>
+                    {% if plan.min_ram_gb %}
+                    <div class="small text-muted">
+                        Need: {{ plan.min_ram_gb }} GB | Available: {{ availability.ram.available }} GB
+                    </div>
+                    {% endif %}
+                    {% if availability.ram.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.ram.items[:3] %}
+                        <li>• {{ item.name }} ({{ item.quantity }}x)</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- GPU Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>GPU</strong>
+                        {% if availability.gpu.status == 'ok' %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.gpu.items|length }} available</span>
+                        {% elif availability.gpu.status == 'insufficient' %}
+                        <span class="badge bg-danger"><i class="bi bi-x"></i> None meet requirements</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{{ availability.gpu.items|length }} available</span>
+                        {% endif %}
+                    </div>
+                    {% if plan.min_vram_gb %}
+                    <div class="small text-muted">Min VRAM: {{ plan.min_vram_gb }} GB</div>
+                    {% endif %}
+                    {% if availability.gpu.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.gpu.items[:3] %}
+                        <li>• {{ item.name }} {% if item.vram_gb %}({{ item.vram_gb }}GB){% endif %}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- CPU Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>CPU</strong>
+                        {% if availability.cpu.status == 'ok' %}
+                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.cpu.items|length }} available</span>
+                        {% else %}
+                        <span class="badge bg-{{ 'warning' if availability.cpu.items else 'secondary' }}">{{ availability.cpu.items|length }} available</span>
+                        {% endif %}
+                    </div>
+                    {% if plan.cpu_socket %}
+                    <div class="small text-muted">Socket: {{ plan.cpu_socket }}</div>
+                    {% endif %}
+                    {% if availability.cpu.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.cpu.items[:3] %}
+                        <li>• {{ item.name }} {% if item.cores %}({{ item.cores }}C/{{ item.threads }}T){% endif %}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Motherboard Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Motherboard</strong>
+                        <span class="badge bg-{{ 'success' if availability.motherboard.items else 'secondary' }}">
+                            {{ availability.motherboard.items|length }} available
+                        </span>
+                    </div>
+                    {% if availability.motherboard.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.motherboard.items[:3] %}
+                        <li>• {{ item.name }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Cooler Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Cooler</strong>
+                        <span class="badge bg-{{ 'success' if availability.cooler.items else 'secondary' }}">
+                            {{ availability.cooler.items|length }} available
+                        </span>
+                    </div>
+                    {% if availability.cooler.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.cooler.items[:3] %}
+                        <li>• {{ item.name }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- PSU Check -->
+            <div class="col-md-6 col-lg-4">
+                <div class="border rounded p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>PSU</strong>
+                        <span class="badge bg-{{ 'success' if availability.psu.items else 'secondary' }}">
+                            {{ availability.psu.items|length }} available
+                        </span>
+                    </div>
+                    {% if availability.psu.items %}
+                    <ul class="list-unstyled small mt-2 mb-0">
+                        {% for item in availability.psu.items[:3] %}
+                        <li>• {{ item.name }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Assigned Components -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">Assigned Components</h5>
+    </div>
+    <div class="card-body">
+        {% if assigned %}
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Component</th>
+                    <th>Qty</th>
+                    <th>Notes</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for comp in assigned %}
+                <tr>
+                    <td>{{ comp.component_type.name if comp.component_type else '-' }}</td>
+                    <td>
+                        {% if comp.inventory_id %}
+                        {{ comp.inventory.display_name if comp.inventory else 'Unknown' }}
+                        {% else %}
+                        <em class="text-muted">Not assigned</em>
+                        {% endif %}
+                    </td>
+                    <td>{{ comp.quantity }}</td>
+                    <td>{{ comp.notes or '-' }}</td>
+                    <td>
+                        <form action="{{ url_for('planner.remove_component', id=plan.id, comp_id=comp.id) }}" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this component?')">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted mb-0">No components assigned to this build yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete -->
+<div class="mt-4">
+    <form action="{{ url_for('planner.delete_plan', id=plan.id) }}" method="post" class="d-inline">
+        <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Delete this build plan?')">
+            <i class="bi bi-trash"></i> Delete Build Plan
+        </button>
+    </form>
+</div>
+{% endblock %}

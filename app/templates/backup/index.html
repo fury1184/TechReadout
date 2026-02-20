@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Backup & Restore - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Backup & Restore</h1>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Create Backup -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0"><i class="bi bi-cloud-upload"></i> Create Backup</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Create a timestamped backup of all inventory data, hosts, specs, and build plans.</p>
+                
+                <form action="{{ url_for('backup.create_backup') }}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Backup Location</label>
+                        <select name="type" class="form-select">
+                            <option value="Local">Local (Docker volume)</option>
+                            {% if nas_configured %}
+                            <option value="NAS">NAS ({{ nas_path }})</option>
+                            {% else %}
+                            <option value="NAS" disabled>NAS (not configured)</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes (optional)</label>
+                        <input type="text" name="notes" class="form-control" placeholder="e.g., Before major changes">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-archive"></i> Create Backup
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Import Data -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0"><i class="bi bi-upload"></i> Import Data</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">Import data from a backup file or migrate from the PowerShell version.</p>
+                
+                <form action="{{ url_for('backup.import_data') }}" method="post" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">Select File</label>
+                        <input type="file" name="file" class="form-control" accept=".json">
+                        <small class="text-muted">Accepts JSON backup files</small>
+                    </div>
+                    <button type="submit" class="btn btn-info">
+                        <i class="bi bi-upload"></i> Import
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if not nas_configured %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    <strong>NAS Backup:</strong> To enable NAS backups, set the <code>NAS_BACKUP_PATH</code> environment variable in docker-compose.yml to your NAS share path.
+</div>
+{% endif %}
+
+<!-- Existing Backups -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Backup History</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Filename</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Created</th>
+                    <th>Notes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for backup in backups %}
+                <tr>
+                    <td>
+                        <i class="bi bi-file-earmark-zip text-muted"></i>
+                        {{ backup.filename }}
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'primary' if backup.backup_type == 'Local' else 'success' }}">
+                            {{ backup.backup_type }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if backup.size_bytes %}
+                        {{ (backup.size_bytes / 1024)|round(1) }} KB
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ backup.notes or '-' }}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('backup.download_backup', id=backup.id) }}" class="btn btn-outline-primary" title="Download">
+                                <i class="bi bi-download"></i>
+                            </a>
+                            <form action="{{ url_for('backup.restore_backup', id=backup.id) }}" method="post" class="d-inline">
+                                <button type="submit" class="btn btn-outline-warning" title="Restore" onclick="return confirm('Restore from this backup? A safety backup will be created first.')">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            </form>
+                            <form action="{{ url_for('backup.delete_backup', id=backup.id) }}" method="post" class="d-inline">
+                                <input type="hidden" name="delete_file" value="yes">
+                                <button type="submit" class="btn btn-outline-danger" title="Delete" onclick="return confirm('Delete this backup?')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center text-muted py-4">
+                        No backups yet. Create your first backup above.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Export Options -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Export Options</h5>
+    </div>
+    <div class="card-body">
+        <p class="card-text">Export your data in different formats for use with other tools.</p>
+        <a href="{{ url_for('backup.export_csv') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-filetype-csv"></i> Export as CSV (PowerShell compatible)
+        </a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Item - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Edit Inventory Item</h1>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Component Type *</label>
+                    <select name="component_type_id" class="form-select" required>
+                        {% for ct in component_types %}
+                        <option value="{{ ct.id }}" {% if item.component_type_id == ct.id %}selected{% endif %}>
+                            {{ ct.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Hardware Spec</label>
+                    <select name="hardware_spec_id" class="form-select">
+                        <option value="">-- Custom entry --</option>
+                        {% for spec in specs %}
+                        <option value="{{ spec.id }}" {% if item.hardware_spec_id == spec.id %}selected{% endif %}>
+                            {{ spec.display_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Custom Name</label>
+                    <input type="text" name="custom_name" class="form-control" value="{{ item.custom_name or '' }}">
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Manufacturer</label>
+                    <input type="text" name="custom_manufacturer" class="form-control" value="{{ item.custom_manufacturer or '' }}">
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" name="quantity" class="form-control" value="{{ item.quantity }}" min="1">
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Purchase Price</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="purchase_price" class="form-control" step="0.01" value="{{ item.purchase_price or '' }}">
+                    </div>
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Condition</label>
+                    <select name="condition" class="form-select">
+                        {% for c in ['New', 'Used', 'Refurbished', 'For Parts'] %}
+                        <option value="{{ c }}" {% if item.item_condition == c %}selected{% endif %}>{{ c }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        {% for s in ['Available', 'In Use', 'Reserved', 'Sold', 'Disposed'] %}
+                        <option value="{{ s }}" {% if item.status == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Location</label>
+                    <input type="text" name="location" class="form-control" value="{{ item.location or '' }}">
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label">Assigned to Host</label>
+                    <select name="assigned_to_host_id" class="form-select">
+                        <option value="">-- Not assigned --</option>
+                        {% for host in hosts %}
+                        <option value="{{ host.id }}" {% if item.assigned_to_host_id == host.id %}selected{% endif %}>
+                            {{ host.hostname }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-control" rows="3">{{ item.notes or '' }}</textarea>
+                </div>
+                
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

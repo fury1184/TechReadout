@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.display_name }} - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-box-seam"></i> {{ item.display_name }}
+    </h1>
+    <div>
+        {% if item.status != 'Sold' %}
+        <a href="{{ url_for('main.inventory_edit', id=item.id) }}" class="btn btn-primary">
+            <i class="bi bi-pencil"></i> Edit
+        </a>
+        {% endif %}
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Basic Info -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0"><i class="bi bi-info-circle"></i> Item Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th style="width: 40%">Component Type</th>
+                        <td>{{ item.component_type.name }}</td>
+                    </tr>
+                    <tr>
+                        <th>Manufacturer</th>
+                        <td>{{ item.custom_manufacturer or (item.hardware_spec.manufacturer if item.hardware_spec else '-') }}</td>
+                    </tr>
+                    <tr>
+                        <th>Model</th>
+                        <td>{{ item.custom_name or (item.hardware_spec.model if item.hardware_spec else '-') }}</td>
+                    </tr>
+                    <tr>
+                        <th>Quantity</th>
+                        <td>{{ item.quantity }}</td>
+                    </tr>
+                    <tr>
+                        <th>Condition</th>
+                        <td>
+                            <span class="badge bg-{{ 'success' if item.item_condition == 'New' else 'secondary' }}">
+                                {{ item.item_condition }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>
+                            <span class="badge bg-{{ 'success' if item.status == 'Available' else 'primary' if item.status == 'In Use' else 'warning' if item.status == 'Reserved' else 'dark' if item.status == 'Sold' else 'secondary' }}">
+                                {{ item.status }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Purchase Price</th>
+                        <td>{{ '$%.2f'|format(item.purchase_price) if item.purchase_price else '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Location</th>
+                        <td>{{ item.location or '-' }}</td>
+                    </tr>
+                    {% if item.assigned_to_host_id %}
+                    <tr>
+                        <th>Assigned To</th>
+                        <td>
+                            <a href="{{ url_for('main.hosts_detail', id=item.assigned_to_host_id) }}">
+                                <i class="bi bi-pc-display"></i> {{ item.assigned_host.hostname }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if item.status == 'Sold' %}
+                    <tr>
+                        <th>Sale Price</th>
+                        <td>{{ '$%.2f'|format(item.sale_price) if item.sale_price else '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Sold To</th>
+                        <td>{{ item.sold_to or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Sale Date</th>
+                        <td>{{ item.sale_date.strftime('%Y-%m-%d') if item.sale_date else '-' }}</td>
+                    </tr>
+                    {% if item.profit is not none %}
+                    <tr>
+                        <th>Profit/Loss</th>
+                        <td class="{{ 'text-success' if item.profit >= 0 else 'text-danger' }}">
+                            {{ '+' if item.profit >= 0 else '' }}${{ "%.2f"|format(item.profit) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
+                    {% if item.notes %}
+                    <tr>
+                        <th>Notes</th>
+                        <td>{{ item.notes }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th>Added</th>
+                        <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Specs -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0"><i class="bi bi-cpu"></i> Technical Specifications</h5>
+            </div>
+            <div class="card-body">
+                {% if item.hardware_spec %}
+                    {% set spec = item.hardware_spec %}
+                    {% set ct = item.component_type.name %}
+                    
+                    <table class="table table-sm mb-0">
+                        <!-- CPU Specs -->
+                        {% if ct == 'CPU' %}
+                        <tr><th style="width: 40%">Cores</th><td>{{ spec.cpu_cores or '-' }}</td></tr>
+                        <tr><th>Threads</th><td>{{ spec.cpu_threads or '-' }}</td></tr>
+                        <tr><th>Base Clock</th><td>{{ '%.2f GHz'|format(spec.cpu_base_clock) if spec.cpu_base_clock else '-' }}</td></tr>
+                        <tr><th>Boost Clock</th><td>{{ '%.2f GHz'|format(spec.cpu_boost_clock) if spec.cpu_boost_clock else '-' }}</td></tr>
+                        <tr><th>TDP</th><td>{{ '%d W'|format(spec.cpu_tdp) if spec.cpu_tdp else '-' }}</td></tr>
+                        <tr><th>Socket</th><td>{{ spec.cpu_socket or '-' }}</td></tr>
+                        <tr><th>Architecture</th><td>{{ spec.cpu_architecture or '-' }}</td></tr>
+                        
+                        <!-- GPU Specs -->
+                        {% elif ct == 'GPU' %}
+                        <tr><th style="width: 40%">VRAM</th><td>{{ '%d GB'|format(spec.gpu_memory_size // 1024) if spec.gpu_memory_size else '-' }}</td></tr>
+                        <tr><th>VRAM Type</th><td>{{ spec.gpu_memory_type or '-' }}</td></tr>
+                        <tr><th>Base Clock</th><td>{{ '%d MHz'|format(spec.gpu_base_clock) if spec.gpu_base_clock else '-' }}</td></tr>
+                        <tr><th>Boost Clock</th><td>{{ '%d MHz'|format(spec.gpu_boost_clock) if spec.gpu_boost_clock else '-' }}</td></tr>
+                        <tr><th>TDP</th><td>{{ '%d W'|format(spec.gpu_tdp) if spec.gpu_tdp else '-' }}</td></tr>
+                        <tr><th>Bus Interface</th><td>{{ spec.gpu_bus_interface or '-' }}</td></tr>
+                        
+                        <!-- Motherboard Specs -->
+                        {% elif ct == 'Motherboard' %}
+                        <tr><th style="width: 40%">Socket</th><td>{{ spec.mobo_socket or '-' }}</td></tr>
+                        <tr><th>Chipset</th><td>{{ spec.mobo_chipset or '-' }}</td></tr>
+                        <tr><th>Form Factor</th><td>{{ spec.mobo_form_factor or '-' }}</td></tr>
+                        <tr><th>Memory Type</th><td>{{ spec.mobo_memory_type or '-' }}</td></tr>
+                        <tr><th>Memory Slots</th><td>{{ spec.mobo_memory_slots or '-' }}</td></tr>
+                        <tr><th>Max Memory</th><td>{{ '%d GB'|format(spec.mobo_max_memory) if spec.mobo_max_memory else '-' }}</td></tr>
+                        <tr><th>PCIe x16 Slots</th><td>{{ spec.mobo_pcie_x16_slots or '-' }}</td></tr>
+                        <tr><th>PCIe x4 Slots</th><td>{{ spec.mobo_pcie_x4_slots or '-' }}</td></tr>
+                        <tr><th>PCIe x1 Slots</th><td>{{ spec.mobo_pcie_x1_slots or '-' }}</td></tr>
+                        <tr><th>M.2 Slots</th><td>{{ spec.mobo_m2_slots or '-' }}</td></tr>
+                        <tr><th>SATA Ports</th><td>{{ spec.mobo_sata_ports or '-' }}</td></tr>
+                        
+                        <!-- PSU Specs -->
+                        {% elif ct == 'PSU' %}
+                        <tr><th style="width: 40%">Wattage</th><td>{{ '%d W'|format(spec.psu_wattage) if spec.psu_wattage else '-' }}</td></tr>
+                        <tr><th>Efficiency</th><td>{{ spec.psu_efficiency or '-' }}</td></tr>
+                        <tr><th>Modular</th><td>{{ spec.psu_modular or '-' }}</td></tr>
+                        <tr><th>Form Factor</th><td>{{ spec.psu_form_factor or '-' }}</td></tr>
+                        
+                        <!-- RAM Specs -->
+                        {% elif ct == 'RAM' %}
+                        <tr><th style="width: 40%">Capacity</th><td>{{ '%d GB'|format(spec.ram_size) if spec.ram_size else '-' }}</td></tr>
+                        <tr><th>Type</th><td>{{ spec.ram_type or '-' }}</td></tr>
+                        <tr><th>Speed</th><td>{{ '%d MHz'|format(spec.ram_speed) if spec.ram_speed else '-' }}</td></tr>
+                        <tr><th>CAS Latency</th><td>{{ spec.ram_cas_latency or '-' }}</td></tr>
+                        
+                        <!-- Storage Specs -->
+                        {% elif ct == 'Storage' %}
+                        <tr><th style="width: 40%">Type</th><td>{{ spec.storage_type or '-' }}</td></tr>
+                        <tr><th>Interface</th><td>{{ spec.storage_interface or '-' }}</td></tr>
+                        <tr><th>Form Factor</th><td>{{ spec.storage_form_factor or '-' }}</td></tr>
+                        <tr><th>Read Speed</th><td>{{ '%d MB/s'|format(spec.storage_read_speed) if spec.storage_read_speed else '-' }}</td></tr>
+                        <tr><th>Write Speed</th><td>{{ '%d MB/s'|format(spec.storage_write_speed) if spec.storage_write_speed else '-' }}</td></tr>
+                        
+                        <!-- Cooler Specs -->
+                        {% elif ct == 'Cooler' %}
+                        <tr><th style="width: 40%">Type</th><td>{{ spec.cooler_type or '-' }}</td></tr>
+                        <tr><th>Fan Size</th><td>{{ '%d mm'|format(spec.cooler_fan_size) if spec.cooler_fan_size else '-' }}</td></tr>
+                        <tr><th>Height</th><td>{{ '%d mm'|format(spec.cooler_height) if spec.cooler_height else '-' }}</td></tr>
+                        <tr><th>TDP Rating</th><td>{{ '%d W'|format(spec.cooler_tdp_rating) if spec.cooler_tdp_rating else '-' }}</td></tr>
+                        <tr><th>Socket Support</th><td>{{ spec.cooler_socket_support or '-' }}</td></tr>
+                        
+                        <!-- Case Specs -->
+                        {% elif ct == 'Case' %}
+                        <tr><th style="width: 40%">Form Factor</th><td>{{ spec.case_form_factor or '-' }}</td></tr>
+                        <tr><th>Type</th><td>{{ spec.case_type or '-' }}</td></tr>
+                        <tr><th>Max GPU Length</th><td>{{ '%d mm'|format(spec.case_max_gpu_length) if spec.case_max_gpu_length else '-' }}</td></tr>
+                        <tr><th>Max Cooler Height</th><td>{{ '%d mm'|format(spec.case_max_cooler_height) if spec.case_max_cooler_height else '-' }}</td></tr>
+                        
+                        <!-- Fan Specs -->
+                        {% elif ct == 'Fan' %}
+                        <tr><th style="width: 40%">Size</th><td>{{ '%d mm'|format(spec.fan_size) if spec.fan_size else '-' }}</td></tr>
+                        <tr><th>Max RPM</th><td>{{ spec.fan_rpm_max or '-' }}</td></tr>
+                        <tr><th>Airflow</th><td>{{ '%.1f CFM'|format(spec.fan_airflow) if spec.fan_airflow else '-' }}</td></tr>
+                        <tr><th>Noise</th><td>{{ '%.1f dBA'|format(spec.fan_noise) if spec.fan_noise else '-' }}</td></tr>
+                        <tr><th>Connector</th><td>{{ spec.fan_connector or '-' }}</td></tr>
+                        
+                        <!-- NIC Specs -->
+                        {% elif ct == 'NIC' %}
+                        <tr><th style="width: 40%">Speed</th><td>{{ spec.nic_speed or '-' }}</td></tr>
+                        <tr><th>Interface</th><td>{{ spec.nic_interface or '-' }}</td></tr>
+                        <tr><th>Ports</th><td>{{ spec.nic_ports or '-' }}</td></tr>
+                        <tr><th>Wireless</th><td>{{ spec.nic_wireless or '-' }}</td></tr>
+                        
+                        <!-- Sound Card Specs -->
+                        {% elif ct == 'Sound Card' %}
+                        <tr><th style="width: 40%">Chipset</th><td>{{ spec.sound_chipset or '-' }}</td></tr>
+                        <tr><th>Channels</th><td>{{ spec.sound_channels or '-' }}</td></tr>
+                        <tr><th>Interface</th><td>{{ spec.sound_interface or '-' }}</td></tr>
+                        
+                        {% else %}
+                        <tr><td colspan="2" class="text-muted">No specific specs available for this component type.</td></tr>
+                        {% endif %}
+                    </table>
+                    
+                    <!-- Source info -->
+                    <hr class="my-3">
+                    <small class="text-muted">
+                        <strong>Source:</strong> 
+                        {% if spec.source_url %}
+                        <a href="{{ spec.source_url }}" target="_blank" rel="noopener">{{ spec.source_url[:50] }}{% if spec.source_url|length > 50 %}...{% endif %}</a>
+                        {% elif spec.raw_data and spec.raw_data.get('source') == 'manual_entry' %}
+                        Manual entry
+                        {% else %}
+                        Database
+                        {% endif %}
+                    </small>
+                {% else %}
+                    <p class="text-muted mb-0">
+                        <i class="bi bi-info-circle"></i> No technical specifications recorded for this item.
+                    </p>
+                    <p class="mt-2 mb-0">
+                        <small>This item was added as a custom entry without spec lookup.</small>
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Raw Data (collapsible) -->
+{% if item.hardware_spec and item.hardware_spec.raw_data %}
+<div class="card mb-4">
+    <div class="card-header">
+        <a class="text-decoration-none" data-bs-toggle="collapse" href="#rawData" role="button" aria-expanded="false">
+            <i class="bi bi-code-slash"></i> Raw Scraped Data
+            <i class="bi bi-chevron-down float-end"></i>
+        </a>
+    </div>
+    <div class="collapse" id="rawData">
+        <div class="card-body">
+            <pre class="bg-light p-3 rounded mb-0" style="max-height: 400px; overflow-y: auto;"><code>{{ item.hardware_spec.raw_data | tojson(indent=2) }}</code></pre>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
