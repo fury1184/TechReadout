@@ -4,9 +4,27 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 mb-0">Hardware Specs Database</h1>
-    <span class="badge bg-primary">{{ specs|length }} items</span>
+    <h1 class="h3 mb-0"><i class="bi bi-database"></i> Hardware Specs Database</h1>
+    <div>
+        <span class="badge bg-primary me-2">{{ specs|length }} items</span>
+        {% if specs %}
+        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#bulkDeleteModal">
+            <i class="bi bi-trash"></i> Bulk Delete
+        </button>
+        {% endif %}
+    </div>
 </div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+{% endwith %}
 
 <!-- Filters -->
 <div class="card mb-4">
@@ -52,46 +70,70 @@
         <table class="table table-hover mb-0">
             <thead>
                 <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" class="form-check-input" id="selectAll" title="Select all">
+                    </th>
                     <th>Model</th>
                     <th>Type</th>
                     <th>Manufacturer</th>
                     <th>Key Specs</th>
                     <th>Source</th>
+                    <th style="width: 80px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for spec in specs %}
                 <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input spec-checkbox" value="{{ spec.id }}" data-name="{{ spec.model }}">
+                    </td>
                     <td><strong>{{ spec.model }}</strong></td>
                     <td>{{ spec.component_type.name }}</td>
                     <td>{{ spec.manufacturer or '-' }}</td>
                     <td>
                         {% if spec.component_type.name == 'CPU' %}
-                            {{ spec.cpu_cores or '?' }} cores / {{ spec.cpu_threads or '?' }} threads
-                            {% if spec.cpu_base_clock %}@ {{ spec.cpu_base_clock }} GHz{% endif %}
+                            {{ spec.cpu_cores or '?' }}C/{{ spec.cpu_threads or '?' }}T
+                            {% if spec.cpu_base_clock %}@ {{ spec.cpu_base_clock }}GHz{% endif %}
+                            {% if spec.cpu_tdp %}• {{ spec.cpu_tdp }}W{% endif %}
                         {% elif spec.component_type.name == 'GPU' %}
-                            {% if spec.gpu_memory_size %}{{ spec.gpu_memory_size }} MB{% endif %}
+                            {% if spec.gpu_memory_size %}{{ (spec.gpu_memory_size / 1024)|int }}GB{% endif %}
                             {{ spec.gpu_memory_type or '' }}
-                            {% if spec.gpu_tdp %}{{ spec.gpu_tdp }}W{% endif %}
+                            {% if spec.gpu_tdp %}• {{ spec.gpu_tdp }}W{% endif %}
+                        {% elif spec.component_type.name == 'Motherboard' %}
+                            {{ spec.mobo_chipset or '' }} {{ spec.mobo_socket or '' }} {{ spec.mobo_form_factor or '' }}
                         {% elif spec.component_type.name == 'RAM' %}
-                            {{ spec.ram_size or '?' }} GB {{ spec.ram_type or '' }} @ {{ spec.ram_speed or '?' }} MHz
+                            {{ spec.ram_size or '?' }}GB {{ spec.ram_type or '' }} @ {{ spec.ram_speed or '?' }}MHz
+                        {% elif spec.component_type.name == 'PSU' %}
+                            {{ spec.psu_wattage or '?' }}W {{ spec.psu_efficiency or '' }}
+                        {% elif spec.component_type.name == 'Storage' %}
+                            {{ spec.storage_type or '' }} {{ spec.storage_interface or '' }}
+                        {% elif spec.component_type.name == 'Cooler' %}
+                            {{ spec.cooler_type or '' }} {% if spec.cooler_tdp_rating %}{{ spec.cooler_tdp_rating }}W{% endif %}
                         {% else %}
                             -
                         {% endif %}
                     </td>
                     <td>
                         {% if spec.source_url %}
-                        <a href="{{ spec.source_url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                        <a href="{{ spec.source_url }}" target="_blank" class="btn btn-sm btn-outline-secondary" title="View source">
                             <i class="bi bi-box-arrow-up-right"></i>
                         </a>
                         {% else %}
-                        -
+                        <span class="text-muted">-</span>
                         {% endif %}
+                    </td>
+                    <td>
+                        <form action="{{ url_for('main.specs_delete', id=spec.id) }}" method="post" class="d-inline"
+                              onsubmit="return confirm('Delete spec for {{ spec.model }}?')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="5" class="text-center text-muted py-4">
+                    <td colspan="7" class="text-center text-muted py-4">
                         No hardware specs found. <a href="{{ url_for('scraper.index') }}">Run the scraper</a> to populate the database.
                     </td>
                 </tr>
@@ -100,4 +142,118 @@
         </table>
     </div>
 </div>
+
+<!-- Bulk Delete Modal -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Bulk Delete Specs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('main.specs_bulk_delete') }}" method="post" id="bulkDeleteForm">
+                <div class="modal-body">
+                    <p>Select specs to delete using the checkboxes, then click Delete Selected.</p>
+                    <div id="selectedSpecs" class="mb-3">
+                        <span class="text-muted">No specs selected</span>
+                    </div>
+                    <input type="hidden" name="spec_ids" id="specIdsInput">
+                    
+                    <hr>
+                    <h6>Or delete by criteria:</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Delete all specs from source:</label>
+                        <select name="delete_source" class="form-select">
+                            <option value="">-- Select source --</option>
+                            <option value="amazon">Amazon</option>
+                            <option value="techpowerup">TechPowerUp</option>
+                            <option value="intel_ark">Intel ARK</option>
+                            <option value="manufacturer">Manufacturer sites</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Delete all specs of type:</label>
+                        <select name="delete_type" class="form-select">
+                            <option value="">-- Select type --</option>
+                            {% for ct in component_types %}
+                            <option value="{{ ct.id }}">{{ ct.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger" id="bulkDeleteBtn">
+                        <i class="bi bi-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Select all checkbox
+document.getElementById('selectAll').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.spec-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateSelectedDisplay();
+});
+
+// Individual checkboxes
+document.querySelectorAll('.spec-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateSelectedDisplay);
+});
+
+function updateSelectedDisplay() {
+    const checked = document.querySelectorAll('.spec-checkbox:checked');
+    const display = document.getElementById('selectedSpecs');
+    const input = document.getElementById('specIdsInput');
+    const btn = document.getElementById('bulkDeleteBtn');
+    
+    if (checked.length === 0) {
+        display.innerHTML = '<span class="text-muted">No specs selected</span>';
+        input.value = '';
+        btn.textContent = 'Delete Selected';
+    } else {
+        const names = Array.from(checked).map(cb => cb.dataset.name).slice(0, 5);
+        let html = `<strong>${checked.length} spec(s) selected:</strong><br>`;
+        html += names.map(n => `• ${n}`).join('<br>');
+        if (checked.length > 5) {
+            html += `<br><em>...and ${checked.length - 5} more</em>`;
+        }
+        display.innerHTML = html;
+        input.value = Array.from(checked).map(cb => cb.value).join(',');
+        btn.textContent = `Delete ${checked.length} Selected`;
+    }
+}
+
+// Confirm bulk delete
+document.getElementById('bulkDeleteForm').addEventListener('submit', function(e) {
+    const specIds = document.getElementById('specIdsInput').value;
+    const source = this.delete_source.value;
+    const type = this.delete_type.value;
+    
+    if (!specIds && !source && !type) {
+        alert('Please select specs to delete or choose a deletion criteria.');
+        e.preventDefault();
+        return;
+    }
+    
+    let msg = 'Are you sure you want to delete ';
+    if (specIds) {
+        const count = specIds.split(',').length;
+        msg += `${count} selected spec(s)?`;
+    } else if (source) {
+        msg += `all specs from ${source}?`;
+    } else if (type) {
+        msg += `all specs of this type?`;
+    }
+    msg += '\n\nThis cannot be undone!';
+    
+    if (!confirm(msg)) {
+        e.preventDefault();
+    }
+});
+</script>
 {% endblock %}

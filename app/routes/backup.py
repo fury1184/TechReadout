@@ -33,6 +33,12 @@ def index():
                          nas_path=NAS_PATH)
 
 
+@bp.route('/import-specs')
+def import_specs():
+    """Dedicated import specs page with templates."""
+    return render_template('backup/import_specs.html')
+
+
 @bp.route('/create', methods=['POST'])
 def create_backup():
     """Create a new backup."""
@@ -486,3 +492,167 @@ def format_csv_row(item, component_type):
     ])
     
     return row
+
+
+@bp.route('/import-specs-json', methods=['POST'])
+def import_specs_json():
+    """
+    Import hardware specs from JSON - allows importing specs without using API credits.
+    Users can get specs from Claude, ChatGPT, or any other source.
+    Optionally also creates inventory items.
+    """
+    specs_json = request.form.get('specs_json', '').strip()
+    create_inventory = request.form.get('create_inventory') == '1'
+    
+    if not specs_json:
+        flash('No JSON provided', 'danger')
+        return redirect(url_for('backup.import_specs'))
+    
+    try:
+        data = json.loads(specs_json)
+        
+        # Handle both single object and array
+        if isinstance(data, dict):
+            specs_list = [data]
+        elif isinstance(data, list):
+            specs_list = data
+        else:
+            flash('JSON must be an object or array of objects', 'danger')
+            return redirect(url_for('backup.index'))
+        
+        imported = 0
+        skipped = 0
+        errors = []
+        
+        for spec_data in specs_list:
+            try:
+                # Get or create component type
+                ct_name = spec_data.get('component_type', 'Other')
+                ct = ComponentType.query.filter_by(name=ct_name).first()
+                if not ct:
+                    ct = ComponentType(name=ct_name)
+                    db.session.add(ct)
+                    db.session.flush()
+                
+                # Check if spec already exists
+                model = spec_data.get('model', '')
+                manufacturer = spec_data.get('manufacturer', '')
+                
+                if not model:
+                    errors.append(f"Skipped entry without model name")
+                    skipped += 1
+                    continue
+                
+                existing = HardwareSpec.query.filter(
+                    HardwareSpec.model.ilike(model),
+                    HardwareSpec.component_type_id == ct.id
+                ).first()
+                
+                if existing:
+                    errors.append(f"Duplicate: {manufacturer} {model}")
+                    skipped += 1
+                    continue
+                
+                # Create new spec
+                print(f"[Import] Creating spec: {manufacturer} {model}")
+                spec = HardwareSpec(
+                    component_type_id=ct.id,
+                    manufacturer=manufacturer,
+                    model=model,
+                    source_url=spec_data.get('source_url', 'JSON Import'),
+                    raw_data=spec_data,
+                    # CPU fields
+                    cpu_socket=spec_data.get('cpu_socket'),
+                    cpu_cores=spec_data.get('cpu_cores'),
+                    cpu_threads=spec_data.get('cpu_threads'),
+                    cpu_base_clock=spec_data.get('cpu_base_clock'),
+                    cpu_boost_clock=spec_data.get('cpu_boost_clock'),
+                    cpu_tdp=spec_data.get('cpu_tdp'),
+                    # GPU fields
+                    gpu_memory_size=spec_data.get('gpu_memory_size'),
+                    gpu_memory_type=spec_data.get('gpu_memory_type'),
+                    gpu_base_clock=spec_data.get('gpu_base_clock'),
+                    gpu_boost_clock=spec_data.get('gpu_boost_clock'),
+                    gpu_tdp=spec_data.get('gpu_tdp'),
+                    # Motherboard fields
+                    mobo_socket=spec_data.get('mobo_socket'),
+                    mobo_chipset=spec_data.get('mobo_chipset'),
+                    mobo_form_factor=spec_data.get('mobo_form_factor'),
+                    mobo_memory_slots=spec_data.get('mobo_memory_slots'),
+                    mobo_memory_type=spec_data.get('mobo_memory_type'),
+                    mobo_max_memory=spec_data.get('mobo_max_memory'),
+                    mobo_pcie_x16_slots=spec_data.get('mobo_pcie_x16_slots'),
+                    mobo_pcie_x4_slots=spec_data.get('mobo_pcie_x4_slots'),
+                    mobo_pcie_x1_slots=spec_data.get('mobo_pcie_x1_slots'),
+                    mobo_m2_slots=spec_data.get('mobo_m2_slots'),
+                    mobo_sata_ports=spec_data.get('mobo_sata_ports'),
+                    # PSU fields
+                    psu_wattage=spec_data.get('psu_wattage'),
+                    psu_efficiency=spec_data.get('psu_efficiency'),
+                    psu_modular=spec_data.get('psu_modular'),
+                    psu_form_factor=spec_data.get('psu_form_factor'),
+                    # RAM fields
+                    ram_size=spec_data.get('ram_size'),
+                    ram_type=spec_data.get('ram_type'),
+                    ram_speed=spec_data.get('ram_speed'),
+                    ram_cas_latency=spec_data.get('ram_cas_latency'),
+                    ram_modules=spec_data.get('ram_modules'),
+                    # Storage fields
+                    storage_capacity=spec_data.get('storage_capacity'),
+                    storage_type=spec_data.get('storage_type'),
+                    storage_interface=spec_data.get('storage_interface'),
+                    storage_form_factor=spec_data.get('storage_form_factor'),
+                    storage_read_speed=spec_data.get('storage_read_speed'),
+                    storage_write_speed=spec_data.get('storage_write_speed'),
+                    # Cooler fields
+                    cooler_type=spec_data.get('cooler_type'),
+                    cooler_fan_size=spec_data.get('cooler_fan_size'),
+                    cooler_height=spec_data.get('cooler_height'),
+                    cooler_tdp_rating=spec_data.get('cooler_tdp_rating'),
+                    cooler_socket_support=spec_data.get('cooler_socket_support'),
+                    # Case fields
+                    case_form_factor=spec_data.get('case_form_factor'),
+                    case_type=spec_data.get('case_type'),
+                    case_max_gpu_length=spec_data.get('case_max_gpu_length'),
+                    case_max_cooler_height=spec_data.get('case_max_cooler_height'),
+                )
+                
+                db.session.add(spec)
+                db.session.flush()  # Get the spec ID
+                imported += 1
+                
+                # Optionally create inventory item
+                if create_inventory:
+                    inventory_item = Inventory(
+                        component_type_id=ct.id,
+                        hardware_spec_id=spec.id,
+                        custom_name=model,
+                        custom_manufacturer=manufacturer,
+                        status='Available'
+                    )
+                    db.session.add(inventory_item)
+                
+            except Exception as e:
+                errors.append(f"Error: {spec_data.get('model', 'unknown')}: {str(e)}")
+                skipped += 1
+        
+        db.session.commit()
+        
+        if imported > 0:
+            msg = f'Successfully imported {imported} spec(s)!'
+            if create_inventory:
+                msg += f' Also created {imported} inventory item(s).'
+            flash(msg, 'success')
+        if skipped > 0:
+            # Show all skip reasons
+            flash(f'Skipped {skipped}: ' + '; '.join(errors), 'warning')
+        if imported == 0 and skipped == 0:
+            flash('No specs to import', 'info')
+            
+    except json.JSONDecodeError as e:
+        flash(f'Invalid JSON: {str(e)}', 'danger')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Import error: {str(e)}', 'danger')
+    
+    return redirect(url_for('backup.import_specs'))

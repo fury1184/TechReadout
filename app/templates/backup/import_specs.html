@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+
+{% block title %}Import Specs - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0"><i class="bi bi-box-arrow-in-down"></i> Import Specs (FREE - No API Credits)</h1>
+</div>
+
+<div class="row">
+    <!-- Left: Instructions -->
+    <div class="col-md-5">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0"><i class="bi bi-lightbulb"></i> How to Use</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li><strong>Select component type</strong> below</li>
+                    <li><strong>Copy the AI prompt</strong> (customize the model names)</li>
+                    <li><strong>Ask Claude or ChatGPT</strong> with that prompt</li>
+                    <li><strong>Paste the JSON response</strong> in the import box</li>
+                    <li><strong>Click Import</strong> - done!</li>
+                </ol>
+                <div class="alert alert-info small mb-0">
+                    <i class="bi bi-piggy-bank"></i> <strong>This uses ZERO API credits!</strong>
+                    Perfect for initial setup or bulk imports.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Component Type Selector -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0"><i class="bi bi-list"></i> Select Component Type</h5>
+            </div>
+            <div class="card-body">
+                <select id="componentTypeSelect" class="form-select form-select-lg">
+                    <option value="CPU">CPU (Processor)</option>
+                    <option value="GPU">GPU (Graphics Card)</option>
+                    <option value="Motherboard">Motherboard</option>
+                    <option value="RAM">RAM (Memory)</option>
+                    <option value="PSU">PSU (Power Supply)</option>
+                    <option value="Storage">Storage (SSD/HDD)</option>
+                    <option value="Cooler">Cooler (CPU/AIO)</option>
+                    <option value="Case">Case</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- AI Prompt Template -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0"><i class="bi bi-chat-dots"></i> AI Prompt</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="copyPrompt()">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Copy this prompt and send it to Claude or ChatGPT:</p>
+                <textarea id="aiPrompt" class="form-control font-monospace" rows="8" readonly></textarea>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Right: JSON Template & Import -->
+    <div class="col-md-7">
+        <!-- JSON Template -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0"><i class="bi bi-braces"></i> JSON Template</h5>
+                <button class="btn btn-sm btn-outline-secondary" onclick="copyTemplate()">
+                    <i class="bi bi-clipboard"></i> Copy
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted">Expected JSON format for <span id="templateTypeName">CPU</span>:</p>
+                <pre id="jsonTemplate" class="bg-light p-3 small" style="max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+        </div>
+        
+        <!-- Import Form -->
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0"><i class="bi bi-download"></i> Paste & Import</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ url_for('backup.import_specs_json') }}" method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Paste JSON from AI here:</label>
+                        <textarea name="specs_json" id="specsJson" class="form-control font-monospace" rows="12" 
+                                  placeholder="Paste the JSON response from Claude/ChatGPT here..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="create_inventory" id="createInventory" value="1">
+                            <label class="form-check-label" for="createInventory">
+                                <strong>Also create inventory items</strong>
+                                <small class="text-muted d-block">Creates one inventory item for each spec imported</small>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-outline-secondary" onclick="validateJson()">
+                            <i class="bi bi-check-circle"></i> Validate JSON
+                        </button>
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-database-add"></i> Import to Database
+                        </button>
+                    </div>
+                </form>
+                <div id="validationResult" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050">
+    {% for category, message in messages %}
+    <div class="toast show" role="alert">
+        <div class="toast-header bg-{{ category }} text-white">
+            <strong class="me-auto">{{ 'Success' if category == 'success' else 'Notice' }}</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">{{ message }}</div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<script>
+// JSON templates for each component type
+const templates = {
+    CPU: {
+        prompt: `Give me specs for these CPUs in JSON array format:
+- [CPU MODEL 1]
+- [CPU MODEL 2]
+- [CPU MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "CPU",
+            manufacturer: "Intel or AMD",
+            model: "Core i7-9700K",
+            cpu_cores: 8,
+            cpu_threads: 8,
+            cpu_base_clock: 3.6,
+            cpu_boost_clock: 4.9,
+            cpu_tdp: 95,
+            cpu_socket: "LGA1151"
+        },
+        fields: "manufacturer, model, cpu_cores, cpu_threads, cpu_base_clock (GHz), cpu_boost_clock (GHz), cpu_tdp (Watts), cpu_socket"
+    },
+    GPU: {
+        prompt: `Give me specs for these GPUs in JSON array format:
+- [GPU MODEL 1]
+- [GPU MODEL 2]
+- [GPU MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "GPU",
+            manufacturer: "NVIDIA, AMD, or Intel",
+            model: "GeForce RTX 4070",
+            gpu_memory_size: 12288,
+            gpu_memory_type: "GDDR6X",
+            gpu_base_clock: 1920,
+            gpu_boost_clock: 2475,
+            gpu_tdp: 200
+        },
+        fields: "manufacturer, model, gpu_memory_size (MB), gpu_memory_type, gpu_base_clock (MHz), gpu_boost_clock (MHz), gpu_tdp (Watts)"
+    },
+    Motherboard: {
+        prompt: `Give me specs for these motherboards in JSON array format:
+- [MOTHERBOARD MODEL 1]
+- [MOTHERBOARD MODEL 2]
+- [MOTHERBOARD MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "Motherboard",
+            manufacturer: "ASUS, MSI, Gigabyte, ASRock, etc.",
+            model: "ROG STRIX B550-F GAMING",
+            mobo_socket: "AM4",
+            mobo_chipset: "B550",
+            mobo_form_factor: "ATX",
+            mobo_memory_slots: 4,
+            mobo_memory_type: "DDR4",
+            mobo_max_memory: 128,
+            mobo_pcie_x16_slots: 2,
+            mobo_m2_slots: 2,
+            mobo_sata_ports: 6
+        },
+        fields: "manufacturer, model, mobo_socket, mobo_chipset, mobo_form_factor (ATX/mATX/ITX), mobo_memory_slots, mobo_memory_type, mobo_max_memory (GB), mobo_pcie_x16_slots, mobo_m2_slots, mobo_sata_ports"
+    },
+    RAM: {
+        prompt: `Give me specs for these RAM kits in JSON array format:
+- [RAM MODEL 1]
+- [RAM MODEL 2]
+- [RAM MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "RAM",
+            manufacturer: "Corsair, G.Skill, Kingston, etc.",
+            model: "Vengeance RGB Pro 32GB",
+            ram_size: 32,
+            ram_type: "DDR4",
+            ram_speed: 3600,
+            ram_cas_latency: 18,
+            ram_modules: 2
+        },
+        fields: "manufacturer, model, ram_size (GB total), ram_type (DDR4/DDR5), ram_speed (MHz), ram_cas_latency (CL), ram_modules (number of sticks)"
+    },
+    PSU: {
+        prompt: `Give me specs for these power supplies in JSON array format:
+- [PSU MODEL 1]
+- [PSU MODEL 2]
+- [PSU MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "PSU",
+            manufacturer: "Corsair, EVGA, Seasonic, etc.",
+            model: "RM850x",
+            psu_wattage: 850,
+            psu_efficiency: "80+ Gold",
+            psu_modular: "Full",
+            psu_form_factor: "ATX"
+        },
+        fields: "manufacturer, model, psu_wattage, psu_efficiency (80+ Bronze/Silver/Gold/Platinum/Titanium), psu_modular (None/Semi/Full), psu_form_factor (ATX/SFX)"
+    },
+    Storage: {
+        prompt: `Give me specs for these storage drives in JSON array format:
+- [STORAGE MODEL 1]
+- [STORAGE MODEL 2]
+- [STORAGE MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "Storage",
+            manufacturer: "Samsung, WD, Seagate, etc.",
+            model: "970 EVO Plus 1TB",
+            storage_capacity: 1000,
+            storage_type: "NVMe SSD",
+            storage_interface: "PCIe 3.0 x4",
+            storage_form_factor: "M.2 2280",
+            storage_read_speed: 3500,
+            storage_write_speed: 3300
+        },
+        fields: "manufacturer, model, storage_capacity (GB), storage_type (NVMe SSD/SATA SSD/HDD), storage_interface, storage_form_factor, storage_read_speed (MB/s), storage_write_speed (MB/s)"
+    },
+    Cooler: {
+        prompt: `Give me specs for these CPU coolers in JSON array format:
+- [COOLER MODEL 1]
+- [COOLER MODEL 2]
+- [COOLER MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "Cooler",
+            manufacturer: "Noctua, Corsair, be quiet!, etc.",
+            model: "NH-D15",
+            cooler_type: "Air Tower",
+            cooler_fan_size: 140,
+            cooler_height: 165,
+            cooler_tdp_rating: 250,
+            cooler_socket_support: "LGA1700, LGA1200, AM5, AM4"
+        },
+        fields: "manufacturer, model, cooler_type (Air Tower/AIO 240mm/AIO 280mm/AIO 360mm), cooler_fan_size (mm), cooler_height (mm), cooler_tdp_rating (Watts), cooler_socket_support"
+    },
+    Case: {
+        prompt: `Give me specs for these PC cases in JSON array format:
+- [CASE MODEL 1]
+- [CASE MODEL 2]
+- [CASE MODEL 3]
+
+Use EXACTLY this JSON format for each:`,
+        json: {
+            component_type: "Case",
+            manufacturer: "Fractal, NZXT, Lian Li, etc.",
+            model: "Meshify C",
+            case_form_factor: "ATX",
+            case_type: "Mid Tower",
+            case_max_gpu_length: 315,
+            case_max_cooler_height: 172
+        },
+        fields: "manufacturer, model, case_form_factor (ATX/mATX/ITX), case_type (Full Tower/Mid Tower/Mini Tower/SFF), case_max_gpu_length (mm), case_max_cooler_height (mm)"
+    }
+};
+
+const componentSelect = document.getElementById('componentTypeSelect');
+const aiPrompt = document.getElementById('aiPrompt');
+const jsonTemplate = document.getElementById('jsonTemplate');
+const templateTypeName = document.getElementById('templateTypeName');
+
+function updateTemplates() {
+    const type = componentSelect.value;
+    const template = templates[type];
+    
+    templateTypeName.textContent = type;
+    
+    // Build the full prompt with JSON example
+    const fullPrompt = template.prompt + '\n\n' + JSON.stringify(template.json, null, 2) + '\n\nRequired fields: ' + template.fields;
+    aiPrompt.value = fullPrompt;
+    
+    // Show JSON template (array format)
+    const arrayExample = [template.json];
+    jsonTemplate.textContent = JSON.stringify(arrayExample, null, 2);
+}
+
+function copyPrompt() {
+    aiPrompt.select();
+    document.execCommand('copy');
+    
+    // Visual feedback
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+    setTimeout(() => btn.innerHTML = originalText, 2000);
+}
+
+function copyTemplate() {
+    navigator.clipboard.writeText(jsonTemplate.textContent);
+    
+    // Visual feedback
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
+    setTimeout(() => btn.innerHTML = originalText, 2000);
+}
+
+function validateJson() {
+    const textarea = document.getElementById('specsJson');
+    const result = document.getElementById('validationResult');
+    
+    try {
+        const data = JSON.parse(textarea.value);
+        const items = Array.isArray(data) ? data : [data];
+        
+        let html = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Valid JSON! Found ${items.length} item(s):</div>`;
+        html += '<ul class="list-group">';
+        items.forEach((item, i) => {
+            html += `<li class="list-group-item"><strong>${item.manufacturer || '?'} ${item.model || 'Unknown'}</strong> (${item.component_type || 'Unknown type'})</li>`;
+        });
+        html += '</ul>';
+        result.innerHTML = html;
+    } catch (e) {
+        result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Invalid JSON: ${e.message}</div>`;
+    }
+}
+
+// Initialize
+componentSelect.addEventListener('change', updateTemplates);
+updateTemplates();
+</script>
+{% endblock %}

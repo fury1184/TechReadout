@@ -1,6 +1,6 @@
 # TechReadout
 
-**Version 1.4.8**
+**Version 1.6.9**
 
 A containerized hardware inventory management system with on-demand spec lookup. Track your PC components, manage builds, and maintain inventory across multiple machines.
 
@@ -55,7 +55,7 @@ The spec lookup feature requires a [Scrape.Do](https://scrape.do) API token beca
 
 | Component | Source | Credits |
 |-----------|--------|---------|
-| Intel CPU | Intel ARK (primary), TechPowerUp (fallback) | ~2-4 |
+| Intel CPU | Intel ARK (primary, JS rendered), TechPowerUp (fallback) | ~5-7 |
 | AMD CPU | TechPowerUp | ~2 |
 | GPU | TechPowerUp (primary), Manufacturer sites (fallback) | ~2-4 |
 | Motherboard | Amazon (primary), Manufacturer sites (fallback) | ~2-4 |
@@ -239,6 +239,114 @@ If you find this project useful, consider buying me a coffee:
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/fury1184)
 
 ## Changelog
+
+### v1.6.9
+- **FIX: Assign inventory error** - Fixed `condition` → `item_condition` typo
+- **Removed Import JSON button** from Add Inventory (use Import Specs page instead)
+- Cleaned up unused JSON import modal and JavaScript
+
+### v1.6.8
+- **FIX: Database search now filters by component type**
+- "ASUS X99-Deluxe" as Motherboard won't match ASUS GPUs anymore
+- Fuzzy search is stricter - requires model-specific words to match
+- Manufacturer names (ASUS, MSI, etc.) alone won't trigger false matches
+
+### v1.6.7
+- **FIX: Improved local database search** - Lookup now finds imported specs
+- Multiple search strategies: exact match, partial match, fuzzy match
+- "MSI Z390 Mortar" now finds "Z390 Mortar" in database
+- Searches local database BEFORE trying external lookups
+
+### v1.6.6
+- **NEW: "Also create inventory items" checkbox** on Import Specs page
+- When checked, creates an inventory item for each spec imported
+- Items created with status "Available" and linked to the spec
+
+### v1.6.5
+- **FIX: Added ram_modules field** - RAM kits can now track number of sticks
+- **FIX: Added storage_capacity to import** - Was missing from import function
+- Database migration: Run `ALTER TABLE hardware_specs ADD COLUMN ram_modules INT AFTER ram_cas_latency;`
+
+### v1.6.4
+- **NEW: Dedicated Import Specs page** - Now in sidebar navigation
+- Component type dropdown with templates for all 8 types:
+  - CPU, GPU, Motherboard, RAM, PSU, Storage, Cooler, Case
+- Copy-ready AI prompts with exact JSON format
+- JSON template preview for each component type
+- Validate JSON button before importing
+- Moved from Backup page to its own page for better UX
+
+### v1.6.3
+- **FIX: Stricter CPU model validation** - i7-9700 no longer matches i7-9700K
+- CPU suffixes (K, F, X, W, S, U, E) must match exactly
+- i7-9700 ≠ i7-9700K (different SKUs)
+- i7-9700K ≠ i7-9700F (different suffixes)
+- i7-9700K = i7-9700K (exact match)
+
+### v1.6.2
+- **NEW: Manual Entry Mode toggle** - Switch in header to always use manual entry
+- Preference saved to localStorage (persists across sessions)
+- When enabled: hides Lookup button, shows spec fields immediately
+- Great for bulk entry without using any lookups
+
+### v1.6.1
+- **FIX: Custom name now takes priority** - When you set a custom name, it's actually used!
+- Previously the hardware_spec name would override custom_name
+- Now: custom_name > hardware_spec.name > fallback
+
+### v1.6.0
+- **MAJOR: Playwright Integration** - Most lookups are now FREE!
+- New lookup order:
+  1. BeautifulSoup (FREE, ~1-2 seconds)
+  2. Playwright browser (FREE, ~10-15 seconds, handles JS)
+  3. Scrape.Do API (PAID, last resort only)
+- **Intel ARK now FREE**: Uses Playwright instead of Scrape.Do (~15-20 seconds)
+- Docker image now includes Chromium for Playwright
+- Scrape.Do credits only used as absolute last resort
+- Updated Spec Lookup page shows new method order
+
+### v1.5.4
+- **NEW: JSON Import** - Import specs without using ANY API credits!
+  - Single item: "Import JSON" button in Add Inventory form
+  - Bulk import: "Import Specs from JSON" section in Backup & Restore page
+- Ask Claude/ChatGPT for specs, paste JSON, done - zero credits used
+- Example prompts included in UI to help you get the right format
+- Great for initial setup or when you want to save credits
+
+### v1.5.3
+- **Intel ARK opt-in checkbox**: Check "Use Intel ARK for Xeons" to enable for server CPUs
+- Shows "+5 credits" warning badge so you know the cost
+- Intel ARK now only runs when explicitly requested (saves credits by default)
+- For Xeons/server CPUs like E5-2687W v4, check the box to get accurate specs from Intel ARK
+
+### v1.5.2
+- **MAJOR CREDIT SAVINGS**: Disabled Intel ARK by default (was ~6-8 credits per lookup!)
+- Intel CPUs now use TechPowerUp like AMD CPUs (~2 credits)
+- GPU manufacturer sites only tried when NOT in lite_mode
+- Amazon fallbacks skipped in lite_mode
+- Estimated savings: 4-10 credits per Intel CPU lookup
+
+### v1.5.1
+- **Credit Monitoring**: Check your Scrape.Do credit balance from the Spec Lookup page
+- **Credit Usage Estimates**: See expected credit usage per component type
+- **Lite Mode**: Added lite_mode parameter to skip expensive fallback methods
+- Free method (BeautifulSoup) is tried first before using any API credits
+- Better logging shows credit cost estimates for each method
+
+### v1.5.0
+- **NEW: Database Management** - Delete specs from the Hardware Specs page
+- Individual delete: Click trash icon on any spec row
+- Bulk delete: Select multiple specs with checkboxes
+- Delete by criteria: Remove all specs from a source (Amazon, TechPowerUp, etc.) or by type
+- Safety check: Specs in use by inventory items cannot be deleted
+- Improved specs table: Shows more spec details (TDP, form factor, etc.)
+
+### v1.4.9
+- **Fixed Intel ARK**: Added `render=true` for JavaScript rendering (Intel ARK is JS-heavy)
+- Intel ARK now costs ~5 credits per lookup (was ~2) due to JS rendering requirement
+- Improved Intel ARK parsing with more CSS selectors and fallback text parsing
+- Added fallback to extract model from URL if page parsing fails
+- Longer timeout (90s) for ARK pages to allow JS to fully render
 
 ### v1.4.8
 - Added model name cleanup for Amazon results (removes verbose product titles)

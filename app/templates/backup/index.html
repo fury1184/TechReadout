@@ -65,6 +65,23 @@
     </div>
 </div>
 
+<!-- Link to Import Specs page -->
+<div class="row g-4 mb-4">
+    <div class="col-12">
+        <div class="card border-success">
+            <div class="card-body d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="card-title mb-1"><i class="bi bi-box-arrow-in-down text-success"></i> Import Specs from JSON</h5>
+                    <p class="card-text text-muted mb-0">Import hardware specs from Claude/ChatGPT - uses ZERO API credits!</p>
+                </div>
+                <a href="{{ url_for('backup.import_specs') }}" class="btn btn-success btn-lg">
+                    <i class="bi bi-arrow-right"></i> Go to Import
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% if not nas_configured %}
 <div class="alert alert-info">
     <i class="bi bi-info-circle"></i>

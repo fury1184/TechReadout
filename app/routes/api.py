@@ -8,8 +8,8 @@ bp = Blueprint('api', __name__)
 @bp.route('/lookup', methods=['POST'])
 def lookup_hardware():
     """
-    On-demand hardware lookup. Searches TechPowerUp for specs.
-    If found, saves to hardware_specs and returns the data.
+    On-demand hardware lookup. First checks local database, then searches external sites.
+    If found externally, saves to hardware_specs and returns the data.
     """
     import os
     from app.scrapers.lookup import lookup_hardware as do_lookup
@@ -21,16 +21,64 @@ def lookup_hardware():
     if not query:
         return jsonify({'error': 'Query required'}), 400
     
-    # Check if already in database
-    existing = HardwareSpec.query.filter(
-        db.or_(
-            HardwareSpec.model.ilike(f'%{query}%'),
-            db.and_(
-                HardwareSpec.manufacturer.isnot(None),
-                db.func.concat(HardwareSpec.manufacturer, ' ', HardwareSpec.model).ilike(f'%{query}%')
-            )
-        )
+    # Get component type ID for filtering (if specified)
+    ct_filter = None
+    if component_type and component_type != 'auto':
+        ct = ComponentType.query.filter_by(name=component_type).first()
+        if ct:
+            ct_filter = ct.id
+    
+    # Check if already in database - try multiple search strategies
+    existing = None
+    
+    # Build base query with optional component type filter
+    def base_query():
+        q = HardwareSpec.query
+        if ct_filter:
+            q = q.filter(HardwareSpec.component_type_id == ct_filter)
+        return q
+    
+    # Strategy 1: Exact model match
+    existing = base_query().filter(
+        HardwareSpec.model.ilike(query)
     ).first()
+    
+    # Strategy 2: Model contains query (but query must be specific enough - at least 4 chars)
+    if not existing and len(query) >= 4:
+        existing = base_query().filter(
+            HardwareSpec.model.ilike(f'%{query}%')
+        ).first()
+    
+    # Strategy 3: Query contains model (e.g., "MSI Z390 Mortar" contains "Z390 Mortar")
+    if not existing:
+        all_specs = base_query().all()
+        for spec in all_specs:
+            if spec.model and len(spec.model) >= 4 and spec.model.lower() in query.lower():
+                existing = spec
+                break
+            # Also check manufacturer + model
+            if spec.manufacturer and spec.model:
+                full_name = f"{spec.manufacturer} {spec.model}".lower()
+                if full_name in query.lower() or query.lower() in full_name:
+                    existing = spec
+                    break
+    
+    # Strategy 4: Fuzzy match - check if MOST words from query exist in model
+    # But be stricter - require model-specific words to match, not just manufacturer
+    if not existing:
+        query_words = [w for w in query.lower().split() if len(w) >= 3]  # Skip short words
+        # Remove common manufacturer names from required matches
+        manufacturers = ['asus', 'msi', 'gigabyte', 'asrock', 'evga', 'nvidia', 'amd', 'intel', 'corsair', 'samsung']
+        model_words = [w for w in query_words if w not in manufacturers]
+        
+        if model_words:  # Only fuzzy match if there are model-specific words
+            for spec in all_specs if 'all_specs' in dir() else base_query().all():
+                model_lower = (spec.model or '').lower()
+                # Check if model-specific words appear in the spec model
+                matches = sum(1 for word in model_words if word in model_lower)
+                if matches >= len(model_words):  # All model words must match
+                    existing = spec
+                    break
     
     if existing:
         return jsonify({
@@ -77,10 +125,14 @@ def lookup_hardware():
         })
     
     # Scrape from web
-    result = do_lookup(query, component_type)
+    # lite_mode=False for full lookup with fallbacks (more credits)
+    # Set to True to save credits at the cost of potentially missing some results
+    lite_mode = data.get('lite_mode', False)
+    use_intel_ark = data.get('use_intel_ark', False)
+    result = do_lookup(query, component_type, lite_mode=lite_mode, use_intel_ark=use_intel_ark)
     
     if not result:
-        return jsonify({'found': False, 'message': 'No specs found for that model'})
+        return jsonify({'found': False, 'message': 'No specs found for that model. Try manual entry.'})
     
     # Check for unsupported component type
     if result.get('error') == 'unsupported_type':
@@ -390,3 +442,52 @@ def get_stats():
         'available_items': Inventory.query.filter_by(status='Available').count(),
         'in_use_items': Inventory.query.filter_by(status='In Use').count()
     })
+
+
+@bp.route('/credits')
+def get_credits():
+    """Check Scrape.Do API credit balance."""
+    import os
+    import requests
+    
+    token = os.environ.get('SCRAPEDO_TOKEN')
+    if not token:
+        return jsonify({'error': 'Scrape.Do not configured'})
+    
+    try:
+        # Scrape.Do returns credit info in response headers
+        # Make a minimal request to check
+        response = requests.get(
+            f'https://api.scrape.do?token={token}&url=https://example.com',
+            timeout=30
+        )
+        
+        # Check headers for credit info
+        remaining = response.headers.get('X-Credits-Remaining') or response.headers.get('x-credits-remaining')
+        used = response.headers.get('X-Credits-Used') or response.headers.get('x-credits-used')
+        
+        if remaining:
+            return jsonify({
+                'remaining': int(remaining),
+                'used_this_request': int(used) if used else 1,
+                'reset_date': 'Monthly'
+            })
+        
+        # If no headers, try to parse from response or estimate
+        if response.status_code == 200:
+            return jsonify({
+                'status': 'active',
+                'message': 'API is working but credit info not available in headers'
+            })
+        elif response.status_code in [402, 403]:
+            return jsonify({
+                'remaining': 0,
+                'error': 'Credits exhausted'
+            })
+        else:
+            return jsonify({
+                'error': f'API returned status {response.status_code}'
+            })
+            
+    except Exception as e:
+        return jsonify({'error': str(e)})

@@ -1,11 +1,14 @@
 """
 Hardware Lookup - On-demand single item scraping.
-Searches TechPowerUp for a specific model and returns specs.
+Searches multiple sources for hardware specs.
 
-Fallback chain:
-1. Intel ARK (for Intel CPUs)
-2. BeautifulSoup + requests (fast, lightweight)
-3. Scrape.Do API (proxy service, handles anti-bot)
+Lookup order (FREE methods first, then paid):
+1. BeautifulSoup + requests (FREE - fast, lightweight)
+2. Playwright (FREE - local browser, handles JS-heavy sites)
+3. Scrape.Do API (PAID - proxy service, last resort)
+
+For Intel CPUs with Intel ARK checkbox enabled:
+- Uses Playwright to scrape Intel ARK (FREE, ~10-15 seconds)
 """
 
 import os
@@ -17,6 +20,30 @@ import requests
 
 # Scrape.Do API token from environment
 SCRAPEDO_TOKEN = os.environ.get('SCRAPEDO_TOKEN', '')
+
+# Playwright availability flag - set on first use
+_playwright_available = None
+
+
+def is_playwright_available() -> bool:
+    """Check if Playwright is installed and working."""
+    global _playwright_available
+    if _playwright_available is not None:
+        return _playwright_available
+    
+    try:
+        from playwright.sync_api import sync_playwright
+        # Quick test to see if browser is installed
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        _playwright_available = True
+        print("[Lookup] Playwright is available")
+    except Exception as e:
+        _playwright_available = False
+        print(f"[Lookup] Playwright not available: {e}")
+    
+    return _playwright_available
 
 
 def normalize_model_name(name: str) -> str:
@@ -227,10 +254,11 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
     
     query_norm = normalize_model_name(query)
     result_norm = normalize_model_name(result_model)
+    query_lower = query.lower()
+    result_lower = result_model.lower()
     
     # Check if key identifiers from query exist in result
     key_ids = extract_key_identifiers(query)
-    result_lower = result_model.lower()
     
     for key_id in key_ids:
         key_id_clean = key_id.replace(' ', '')
@@ -250,29 +278,54 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
     
     # Check that result doesn't have extra significant identifiers not in query
     result_ids = extract_key_identifiers(result_model)
+    query_ids_clean = [k.replace(' ', '').lower() for k in key_ids]
+    
     for rid in result_ids:
-        if rid not in [k.replace(' ', '') for k in key_ids]:
+        rid_lower = rid.lower()
+        if rid_lower not in query_ids_clean:
             # Result has identifier not in query - might be wrong model
             # E.g., query "RTX 4070" returning "RTX 4070 Ti"
-            if rid in ['ti', 'super', 'xt', 'xl']:
-                print(f"[Lookup] Validation failed: result has '{rid}' not in query")
+            # E.g., query "i7-9700" returning "i7-9700K"
+            print(f"[Lookup] Validation failed: result has '{rid}' not in query")
+            return False
+    
+    # Additional check for CPU suffix mismatch
+    # Query "i7-9700" should NOT match "i7-9700K"
+    # Query "i7-9700K" should NOT match "i7-9700" or "i7-9700F"
+    if component_type == 'CPU':
+        # Extract model number with optional suffix from both
+        query_cpu_match = re.search(r'(\d{4,5})([kfxwsue]*)\b', query_lower)
+        result_cpu_match = re.search(r'(\d{4,5})([kfxwsue]*)\b', result_lower)
+        
+        if query_cpu_match and result_cpu_match:
+            query_model_num = query_cpu_match.group(1)
+            query_suffix = query_cpu_match.group(2)
+            result_model_num = result_cpu_match.group(1)
+            result_suffix = result_cpu_match.group(2)
+            
+            # Model numbers must match
+            if query_model_num != result_model_num:
+                print(f"[Lookup] Validation failed: model number mismatch {query_model_num} vs {result_model_num}")
                 return False
-            # For version mismatches
-            if rid.startswith('v') and rid[1:].isdigit():
-                print(f"[Lookup] Validation failed: result has version '{rid}' not in query")
+            
+            # Suffixes must match exactly (both empty, or both same)
+            if query_suffix != result_suffix:
+                print(f"[Lookup] Validation failed: suffix mismatch '{query_suffix}' vs '{result_suffix}' (query: {query}, result: {result_model})")
                 return False
     
     print(f"[Lookup] Validation passed: '{query}' matches '{result_model}'")
     return True
 
 
-def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
+def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = False, use_intel_ark: bool = False) -> Optional[Dict]:
     """
     Search for a specific hardware item and return its specs.
     
     Args:
         query: Model name to search for (e.g., "RTX 4070", "i7-9700K", "ROG STRIX B550-F")
         component_type: 'GPU', 'CPU', 'Motherboard', or 'auto' to detect
+        lite_mode: If True, only try primary source (saves credits but may miss some results)
+        use_intel_ark: If True, use Intel ARK for Intel CPUs (costs ~6 extra credits)
         
     Returns:
         Dict with specs if found, None otherwise
@@ -281,7 +334,7 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
     if component_type == 'auto':
         component_type = detect_component_type(query)
     
-    print(f"[Lookup] Searching for '{query}' as {component_type}")
+    print(f"[Lookup] Searching for '{query}' as {component_type}" + (" (LITE MODE)" if lite_mode else "") + (" (Intel ARK enabled)" if use_intel_ark else ""))
     
     # Handle motherboard lookups separately (different sources)
     if component_type == 'Motherboard':
@@ -334,31 +387,25 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
         print(f"[Lookup] {component_type} lookup failed")
         return None
     
-    # For Intel CPUs, try Intel ARK first (authoritative source)
-    if component_type == 'CPU' and is_intel_cpu(query):
-        print("[Lookup] Detected Intel CPU, trying Intel ARK first...")
-        result = search_intel_ark(query)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                # Intel ARK is authoritative - be more lenient with validation
-                # Just check that main model numbers match
-                query_nums = re.findall(r'\d{4}', query)  # e.g., "2687" from E5-2687W
-                result_model = result.get('model', '')
-                if query_nums and any(num in result_model for num in query_nums):
-                    print(f"[Lookup] Success with Intel ARK: {result_model}")
-                    return result
-                elif not query_nums:
-                    # No 4-digit numbers to match, accept the result
-                    print(f"[Lookup] Success with Intel ARK (no model number check): {result_model}")
-                    return result
-                else:
-                    print(f"[Lookup] Intel ARK result '{result_model}' didn't match query numbers {query_nums}")
+    # For Intel CPUs with Intel ARK enabled, use Playwright (FREE) instead of Scrape.Do
+    if component_type == 'CPU' and is_intel_cpu(query) and use_intel_ark:
+        print("[Lookup] Intel ARK enabled, trying Playwright (FREE)...")
+        result = search_intel_ark_playwright(query)
+        if result and result.get('model'):
+            # Intel ARK is authoritative - be more lenient with validation
+            query_nums = re.findall(r'\d{4}', query)  # e.g., "2687" from E5-2687W
+            result_model = result.get('model', '')
+            if query_nums and any(num in result_model for num in query_nums):
+                print(f"[Lookup] Success with Intel ARK (Playwright): {result_model}")
+                return result
+            elif not query_nums:
+                print(f"[Lookup] Success with Intel ARK (Playwright, no model check): {result_model}")
+                return result
+            else:
+                print(f"[Lookup] Intel ARK result '{result_model}' didn't match query numbers {query_nums}")
     
-    # For GPUs with AIB partner names, try manufacturer sites FIRST (they have actual card specs)
-    if component_type == 'GPU':
+    # For GPUs with AIB partner names, skip manufacturer sites in lite_mode (they use credits)
+    if component_type == 'GPU' and not lite_mode:
         manufacturer = detect_gpu_manufacturer(query)
         if manufacturer:
             print(f"[Lookup] Detected GPU manufacturer: {manufacturer}, trying their site first...")
@@ -375,8 +422,12 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
                         print("[Lookup] GPU manufacturer result didn't match query, trying TechPowerUp...")
             print(f"[Lookup] {manufacturer} site lookup failed, falling back to TechPowerUp...")
     
-    # Try 1: Direct TechPowerUp URL (BeautifulSoup)
-    print("[Lookup] Trying BeautifulSoup...")
+    # =========================================================================
+    # FREE METHODS (no API credits)
+    # =========================================================================
+    
+    # Try 1: Direct TechPowerUp URL (BeautifulSoup) - FREE, instant
+    print("[Lookup] Method 1: BeautifulSoup (FREE, fast)...")
     result = search_with_requests(query, component_type)
     if result and result.get('model'):
         if validate_result(query, result.get('model'), component_type):
@@ -385,9 +436,28 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
         else:
             print("[Lookup] BeautifulSoup result didn't match query, skipping")
     
-    # Try 2: Scrape.Do (proxy API)
+    # Try 2: Playwright browser (FREE but slower, ~10-15 seconds)
+    print("[Lookup] Method 2: Playwright (FREE, slower ~10-15s)...")
+    result = search_with_playwright(query, component_type)
+    if result and result.get('model'):
+        if validate_result(query, result.get('model'), component_type):
+            print("[Lookup] Success with Playwright")
+            return result
+        else:
+            print("[Lookup] Playwright result didn't match query, skipping")
+    
+    # In lite mode, stop here (only free methods)
+    if lite_mode:
+        print("[Lookup] Lite mode: Stopping after free methods")
+        return None
+    
+    # =========================================================================
+    # PAID METHODS (Scrape.Do API credits) - LAST RESORT
+    # =========================================================================
+    
     if SCRAPEDO_TOKEN:
-        print("[Lookup] Trying Scrape.Do...")
+        # Try 3: Scrape.Do direct URL (~1 credit)
+        print("[Lookup] Method 3: Scrape.Do direct (~1 credit)...")
         result = search_with_scrapedo(query, component_type)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -400,8 +470,8 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
                 else:
                     print("[Lookup] Scrape.Do result didn't match query, skipping")
         
-        # Try 3: TechPowerUp's own search page (more reliable for exact model names)
-        print("[Lookup] Trying TechPowerUp site search...")
+        # Try 4: TechPowerUp site search via Scrape.Do (~2 credits)
+        print("[Lookup] Method 4: TechPowerUp site search (~2 credits)...")
         result = search_tpu_via_site_search(query, component_type)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -418,9 +488,14 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
     
     print("[Lookup] All primary methods failed")
     
+    # Last resort fallbacks use additional credits - skip in lite_mode
+    if lite_mode:
+        print("[Lookup] Lite mode: Skipping Amazon fallbacks to save credits")
+        return None
+    
     # Last resort for GPUs: try Amazon (has AIB-specific listings)
     if component_type == 'GPU':
-        print("[Lookup] Trying Amazon as last resort for GPU...")
+        print("[Lookup] Trying Amazon as last resort for GPU (~2 credits)...")
         result = search_amazon_gpu(query)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -432,7 +507,7 @@ def lookup_hardware(query: str, component_type: str = 'auto') -> Optional[Dict]:
     
     # Last resort for CPUs: try Amazon
     if component_type == 'CPU':
-        print("[Lookup] Trying Amazon as last resort for CPU...")
+        print("[Lookup] Trying Amazon as last resort for CPU (~2 credits)...")
         result = search_amazon_cpu(query)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -1462,9 +1537,10 @@ def search_intel_ark(query: str) -> Optional[Dict]:
         
         print(f"[Lookup] Intel ARK detail: {ark_link}")
         
-        # Fetch the detail page through Scrape.Do
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(ark_link)}"
-        detail_response = requests.get(detail_api_url, timeout=60)
+        # Fetch the detail page through Scrape.Do with JS rendering
+        # Intel ARK is JavaScript-heavy, needs render=true (costs 5 credits instead of 1)
+        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(ark_link)}"
+        detail_response = requests.get(detail_api_url, timeout=90)  # Longer timeout for rendering
         
         # Check for credit exhaustion
         if detail_response.status_code in [402, 403]:
@@ -1499,46 +1575,91 @@ def parse_intel_ark_page(html: str, url: str) -> Optional[Dict]:
         'raw_data': {}
     }
     
-    # Get product name
-    title = soup.select_one('h1.product-title, .product-family-title-text, h1')
-    if title:
-        specs['model'] = title.text.strip()
+    # Get product name - try multiple selectors
+    title_selectors = [
+        'h1.product-title',
+        '.product-family-title-text', 
+        '[data-wap_ref="defined-title"]',
+        '.ProductName',
+        'h1.ark-headline',
+        'h1'
+    ]
+    for selector in title_selectors:
+        title = soup.select_one(selector)
+        if title and title.text.strip():
+            model_text = title.text.strip()
+            # Clean up the model name
+            specs['model'] = clean_cpu_model_name(model_text)
+            specs['raw_data']['full_title'] = model_text
+            break
     
-    # Parse specs table
-    for row in soup.select('.ark-product-specs tr, .specs tr, [data-key]'):
-        label = row.select_one('.label, .ark-product-specs__label, td:first-child')
-        value = row.select_one('.value, .ark-product-specs__value, td:last-child')
-        
-        if label and value:
-            key = label.text.strip().lower().replace(' ', '_').replace('#', 'num')
-            val = value.text.strip()
-            specs['raw_data'][key] = val
+    # Parse specs table - try multiple table structures
+    table_selectors = [
+        '.ark-product-specs tr',
+        '.specs-section tr', 
+        '.tech-section tr',
+        'table.specs tr',
+        '[class*="specification"] tr',
+        '.product-specs tr'
+    ]
+    for selector in table_selectors:
+        rows = soup.select(selector)
+        if rows:
+            for row in rows:
+                label = row.select_one('td:first-child, th, .label, [class*="label"]')
+                value = row.select_one('td:last-child, .value, [class*="value"]')
+                
+                if label and value:
+                    key = label.text.strip().lower().replace(' ', '_').replace('#', 'num').replace(':', '')
+                    val = value.text.strip()
+                    if key and val:
+                        specs['raw_data'][key] = val
+            break
     
-    # Also try data attributes
+    # Also try data attributes (ARK sometimes uses these)
     for elem in soup.select('[data-key]'):
         key = elem.get('data-key', '').lower().replace(' ', '_')
         value = elem.get('data-value', '') or elem.text.strip()
         if key and value:
             specs['raw_data'][key] = value
     
+    # Try definition lists
+    for dl in soup.select('dl'):
+        dts = dl.select('dt')
+        dds = dl.select('dd')
+        for dt, dd in zip(dts, dds):
+            key = dt.text.strip().lower().replace(' ', '_').replace(':', '')
+            val = dd.text.strip()
+            if key and val:
+                specs['raw_data'][key] = val
+    
     raw = specs['raw_data']
+    page_text = soup.get_text()
     
     # Extract normalized CPU fields
     # Cores
-    for key in ['total_cores', 'cores', 'num_of_cores', 'core_count']:
+    for key in ['total_cores', 'cores', 'num_of_cores', 'core_count', 'performance_cores', '___of_cores']:
         if key in raw:
             match = re.search(r'(\d+)', raw[key])
             if match:
                 specs['cpu_cores'] = int(match.group(1))
-            break
+                break
+    if not specs.get('cpu_cores'):
+        match = re.search(r'(?:total\s+)?cores?[:\s]+(\d+)', page_text, re.I)
+        if match:
+            specs['cpu_cores'] = int(match.group(1))
     
     # Threads
-    for key in ['total_threads', 'threads', 'num_of_threads', 'thread_count']:
+    for key in ['total_threads', 'threads', 'num_of_threads', 'thread_count', '___of_threads']:
         if key in raw:
             match = re.search(r'(\d+)', raw[key])
             if match:
                 specs['cpu_threads'] = int(match.group(1))
-            break
+                break
+    if not specs.get('cpu_threads'):
+        match = re.search(r'(?:total\s+)?threads?[:\s]+(\d+)', page_text, re.I)
+        if match:
+            specs['cpu_threads'] = int(match.group(1))
     
     # Base clock
     for key in ['processor_base_frequency', 'base_frequency', 'base_clock', 'clock_speed']:
@@ -1546,15 +1667,23 @@ def parse_intel_ark_page(html: str, url: str) -> Optional[Dict]:
             match = re.search(r'([\d.]+)\s*GHz', raw[key], re.I)
             if match:
                 specs['cpu_base_clock'] = float(match.group(1))
-            break
+                break
+    if not specs.get('cpu_base_clock'):
+        match = re.search(r'base\s+(?:frequency|clock)[:\s]+([\d.]+)\s*GHz', page_text, re.I)
+        if match:
+            specs['cpu_base_clock'] = float(match.group(1))
     
     # Boost/Turbo clock
-    for key in ['max_turbo_frequency', 'turbo_frequency', 'boost_clock', 'turbo_boost']:
+    for key in ['max_turbo_frequency', 'turbo_frequency', 'boost_clock', 'turbo_boost', 'single_core_turbo']:
         if key in raw:
             match = re.search(r'([\d.]+)\s*GHz', raw[key], re.I)
             if match:
                 specs['cpu_boost_clock'] = float(match.group(1))
-            break
+                break
+    if not specs.get('cpu_boost_clock'):
+        match = re.search(r'(?:max\s+)?turbo\s+(?:frequency|boost)[:\s]+([\d.]+)\s*GHz', page_text, re.I)
+        if match:
+            specs['cpu_boost_clock'] = float(match.group(1))
     
     # TDP
     for key in ['tdp', 'processor_base_power', 'thermal_design_power', 'max_turbo_power']:
@@ -1562,18 +1691,38 @@ def parse_intel_ark_page(html: str, url: str) -> Optional[Dict]:
             match = re.search(r'(\d+)\s*W', raw[key])
             if match:
                 specs['cpu_tdp'] = int(match.group(1))
-            break
+                break
+    if not specs.get('cpu_tdp'):
+        match = re.search(r'(?:tdp|thermal\s+design\s+power)[:\s]+(\d+)\s*W', page_text, re.I)
+        if match:
+            specs['cpu_tdp'] = int(match.group(1))
     
     # Socket
-    for key in ['sockets_supported', 'socket', 'package']:
+    for key in ['sockets_supported', 'socket', 'package', 'socket_supported']:
         if key in raw:
             specs['cpu_socket'] = raw[key]
             break
+    if not specs.get('cpu_socket'):
+        match = re.search(r'(?:socket|package)[:\s]+((?:LGA|BGA|FCLGA)[\d\-]+|AM\d+)', page_text, re.I)
+        if match:
+            specs['cpu_socket'] = match.group(1).upper()
     
     if specs.get('model'):
+        found_specs = [f"{k}={v}" for k, v in specs.items() if k.startswith('cpu_') and v]
         print(f"[Lookup] Intel ARK parsed: {specs.get('model')}")
+        print(f"[Lookup] Found: {', '.join(found_specs) if found_specs else 'model only'}")
         return specs
     
+    # Last resort - try to get model from URL
+    if '/products/' in url:
+        match = re.search(r'/products/\d+/([^/]+)', url)
+        if match:
+            model_from_url = match.group(1).replace('-', ' ').title()
+            specs['model'] = f"Intel {model_from_url}"
+            print(f"[Lookup] Intel ARK parsed from URL: {specs.get('model')}")
+            return specs
+    
+    print("[Lookup] Intel ARK parsing failed - no model found")
     return None
 
 
@@ -3095,7 +3244,271 @@ def search_with_requests(query: str, component_type: str) -> Optional[Dict]:
 
 
 # =============================================================================
-# Method 2: Scrape.Do API
+# Method 2: Playwright (FREE - local browser for JS-heavy sites)
+# =============================================================================
+
+def search_with_playwright(query: str, component_type: str) -> Optional[Dict]:
+    """
+    Search using Playwright browser automation (FREE - no API credits).
+    Slower than requests (~10-15 seconds) but handles JavaScript-rendered pages.
+    """
+    if not is_playwright_available():
+        print("[Lookup] Playwright not available, skipping")
+        return None
+    
+    # For GPUs, normalize the query to reference card name
+    search_query = query
+    if component_type == 'GPU':
+        search_query = normalize_gpu_query(query)
+    
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        print(f"[Lookup] Playwright starting (this may take 10-15 seconds)...")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+            page.set_default_timeout(30000)  # 30 second timeout
+            
+            # Try direct TechPowerUp URL first
+            direct_url = get_direct_tpu_url(search_query, component_type)
+            print(f"[Lookup] Playwright trying direct URL: {direct_url}")
+            
+            try:
+                page.goto(direct_url, wait_until='domcontentloaded')
+                page.wait_for_timeout(2000)  # Wait for any JS rendering
+                
+                content = page.content()
+                if 'gpuname' in content or 'cpuname' in content:
+                    print(f"[Lookup] Playwright direct URL worked!")
+                    browser.close()
+                    return parse_techpowerup_detail(content, component_type, direct_url)
+            except Exception as e:
+                print(f"[Lookup] Playwright direct URL failed: {e}")
+            
+            # Try Google search for TechPowerUp
+            google_url = f"https://www.google.com/search?q=site:techpowerup.com+{component_type.lower()}-specs+{requests.utils.quote(search_query)}"
+            print(f"[Lookup] Playwright trying Google search...")
+            
+            try:
+                page.goto(google_url, wait_until='domcontentloaded')
+                page.wait_for_timeout(2000)
+                
+                # Find TechPowerUp links in results
+                links = page.query_selector_all('a[href*="techpowerup.com"]')
+                tpu_url = None
+                
+                for link in links:
+                    href = link.get_attribute('href')
+                    if href and ('gpu-specs' in href or 'cpu-specs' in href):
+                        # Extract actual URL from Google redirect
+                        if '/url?q=' in href:
+                            tpu_url = href.split('/url?q=')[1].split('&')[0]
+                        else:
+                            tpu_url = href
+                        break
+                
+                if tpu_url:
+                    print(f"[Lookup] Playwright found TPU link: {tpu_url}")
+                    page.goto(tpu_url, wait_until='domcontentloaded')
+                    page.wait_for_timeout(2000)
+                    
+                    content = page.content()
+                    if 'gpuname' in content or 'cpuname' in content:
+                        print(f"[Lookup] Playwright Google search worked!")
+                        browser.close()
+                        return parse_techpowerup_detail(content, component_type, tpu_url)
+                        
+            except Exception as e:
+                print(f"[Lookup] Playwright Google search failed: {e}")
+            
+            browser.close()
+            
+    except Exception as e:
+        print(f"[Lookup] Playwright error: {e}")
+    
+    return None
+
+
+def search_intel_ark_playwright(query: str) -> Optional[Dict]:
+    """
+    Search Intel ARK using Playwright (FREE - no API credits).
+    Intel ARK is JavaScript-heavy so this works better than requests.
+    """
+    if not is_playwright_available():
+        print("[Lookup] Playwright not available for Intel ARK")
+        return None
+    
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        print(f"[Lookup] Playwright Intel ARK search for: {query}")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+            page.set_default_timeout(45000)  # 45 second timeout for Intel ARK
+            
+            # Search Google for Intel ARK page
+            search_query = f"site:ark.intel.com {query}"
+            google_url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}"
+            
+            print(f"[Lookup] Playwright searching Google for Intel ARK...")
+            page.goto(google_url, wait_until='domcontentloaded')
+            page.wait_for_timeout(2000)
+            
+            # Find Intel ARK link
+            ark_url = None
+            links = page.query_selector_all('a')
+            
+            for link in links:
+                href = link.get_attribute('href') or ''
+                if 'ark.intel.com' in href and '/products/' in href:
+                    # Extract actual URL from Google redirect
+                    if '/url?q=' in href:
+                        ark_url = href.split('/url?q=')[1].split('&')[0]
+                        ark_url = requests.utils.unquote(ark_url)
+                    elif href.startswith('http'):
+                        ark_url = href
+                    break
+            
+            if not ark_url:
+                print("[Lookup] No Intel ARK link found in Google results")
+                browser.close()
+                return None
+            
+            print(f"[Lookup] Playwright loading Intel ARK: {ark_url}")
+            page.goto(ark_url, wait_until='networkidle')
+            page.wait_for_timeout(3000)  # Extra wait for JS rendering
+            
+            content = page.content()
+            browser.close()
+            
+            # Parse Intel ARK page
+            return parse_intel_ark_page(content, ark_url)
+            
+    except Exception as e:
+        print(f"[Lookup] Playwright Intel ARK error: {e}")
+    
+    return None
+
+
+def parse_intel_ark_page(html: str, source_url: str) -> Optional[Dict]:
+    """Parse Intel ARK product page."""
+    soup = BeautifulSoup(html, 'lxml')
+    
+    # Try to find product name
+    model = None
+    for selector in ['h1.product-title', '[data-wap_ref="defined-title"]', '.ProductName', 'h1']:
+        elem = soup.select_one(selector)
+        if elem and elem.get_text(strip=True):
+            model = elem.get_text(strip=True)
+            break
+    
+    if not model:
+        # Try to extract from page text
+        match = re.search(r'((?:Intel\s+)?(?:Xeon|Core)\s+[^\n]+)', html, re.I)
+        if match:
+            model = match.group(1).strip()
+    
+    if not model:
+        print("[Lookup] Could not find model name in Intel ARK page")
+        return None
+    
+    # Clean up model name
+    model = clean_cpu_model_name(model)
+    
+    # Extract specs from tables or data attributes
+    specs = {}
+    
+    # Look for spec tables
+    for row in soup.select('tr, .ark-product-specs tr, .specs-row'):
+        label_elem = row.select_one('th, .label, [class*="label"]')
+        value_elem = row.select_one('td, .value, [class*="value"]')
+        
+        if label_elem and value_elem:
+            label = label_elem.get_text(strip=True).lower()
+            value = value_elem.get_text(strip=True)
+            
+            if 'total cores' in label or label == 'cores':
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['cpu_cores'] = int(match.group(1))
+            elif 'total threads' in label or label == 'threads':
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['cpu_threads'] = int(match.group(1))
+            elif 'base frequency' in label or 'processor base' in label:
+                match = re.search(r'([\d.]+)\s*[gG][hH]z', value)
+                if match:
+                    specs['cpu_base_clock'] = float(match.group(1))
+            elif 'turbo' in label or 'boost' in label or 'max frequency' in label:
+                match = re.search(r'([\d.]+)\s*[gG][hH]z', value)
+                if match:
+                    specs['cpu_boost_clock'] = float(match.group(1))
+            elif 'tdp' in label or 'thermal design' in label:
+                match = re.search(r'(\d+)\s*[wW]', value)
+                if match:
+                    specs['cpu_tdp'] = int(match.group(1))
+            elif 'socket' in label:
+                specs['cpu_socket'] = value
+            elif 'cache' in label and 'l3' not in specs:
+                specs['cache'] = value
+    
+    # Fallback: search page text for specs
+    page_text = soup.get_text()
+    
+    if 'cpu_cores' not in specs:
+        match = re.search(r'(?:total\s+)?cores?[:\s]+(\d+)', page_text, re.I)
+        if match:
+            specs['cpu_cores'] = int(match.group(1))
+    
+    if 'cpu_threads' not in specs:
+        match = re.search(r'(?:total\s+)?threads?[:\s]+(\d+)', page_text, re.I)
+        if match:
+            specs['cpu_threads'] = int(match.group(1))
+    
+    if 'cpu_base_clock' not in specs:
+        match = re.search(r'(?:base|processor)\s+(?:frequency|clock)[:\s]+([\d.]+)\s*GHz', page_text, re.I)
+        if match:
+            specs['cpu_base_clock'] = float(match.group(1))
+    
+    if 'cpu_boost_clock' not in specs:
+        match = re.search(r'(?:turbo|boost|max)\s+(?:frequency|clock)[:\s]+([\d.]+)\s*GHz', page_text, re.I)
+        if match:
+            specs['cpu_boost_clock'] = float(match.group(1))
+    
+    if 'cpu_tdp' not in specs:
+        match = re.search(r'TDP[:\s]+(\d+)\s*W', page_text, re.I)
+        if match:
+            specs['cpu_tdp'] = int(match.group(1))
+    
+    if 'cpu_socket' not in specs:
+        match = re.search(r'Socket[:\s]+([\w\d\-]+)', page_text, re.I)
+        if match:
+            specs['cpu_socket'] = match.group(1)
+    
+    result = {
+        'component_type': 'CPU',
+        'manufacturer': 'Intel',
+        'model': model,
+        'source_url': source_url,
+        **specs
+    }
+    
+    print(f"[Lookup] Intel ARK parsed: {model} - {specs.get('cpu_cores', '?')}C/{specs.get('cpu_threads', '?')}T")
+    return result
+
+
+# =============================================================================
+# Method 3: Scrape.Do API (PAID - last resort)
 # =============================================================================
 
 def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:

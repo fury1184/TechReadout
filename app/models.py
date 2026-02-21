@@ -47,6 +47,7 @@ class HardwareSpec(db.Model):
     ram_type = db.Column(db.String(20))
     ram_speed = db.Column(db.Integer)
     ram_cas_latency = db.Column(db.String(20))
+    ram_modules = db.Column(db.Integer)  # Number of sticks in kit
     
     # Motherboard-specific
     mobo_socket = db.Column(db.String(50))
@@ -152,11 +153,18 @@ class Inventory(db.Model):
     
     @property
     def display_name(self):
+        # Custom name takes priority (user explicitly set it)
+        if self.custom_name:
+            if self.custom_manufacturer:
+                return f"{self.custom_manufacturer} {self.custom_name}"
+            return self.custom_name
+        # Fall back to hardware spec name
         if self.hardware_spec:
             return self.hardware_spec.display_name
+        # Last resort
         if self.custom_manufacturer:
-            return f"{self.custom_manufacturer} {self.custom_name}"
-        return self.custom_name or "Unknown"
+            return f"{self.custom_manufacturer} (Unknown Model)"
+        return "Unknown"
     
     @property
     def profit(self):

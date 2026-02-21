@@ -5,9 +5,15 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="h3 mb-0">Add Inventory Item</h1>
-    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left"></i> Back
-    </a>
+    <div>
+        <div class="form-check form-switch d-inline-block me-3">
+            <input class="form-check-input" type="checkbox" id="manualModeToggle">
+            <label class="form-check-label" for="manualModeToggle">Manual Entry Mode</label>
+        </div>
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
 </div>
 
 <div class="card">
@@ -29,14 +35,21 @@
                 <!-- Model Search with Lookup -->
                 <div class="col-md-5">
                     <label class="form-label">Model *</label>
-                    <div class="input-group">
+                    <div class="input-group" id="lookupGroup">
                         <input type="text" name="custom_name" id="modelInput" class="form-control" 
                                placeholder="e.g., RTX 4070, i7-9700K" required>
                         <button type="button" class="btn btn-primary" id="lookupBtn">
                             <i class="bi bi-search"></i> Lookup
                         </button>
                     </div>
-                    <small class="text-muted">Enter model name and click Lookup to fetch specs</small>
+                    <div id="lookupOptions" class="mt-1">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="useIntelArk">
+                            <label class="form-check-label small text-muted" for="useIntelArk">
+                                Use Intel ARK for Xeons <span class="badge bg-success">FREE (Playwright)</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Manufacturer -->
@@ -77,9 +90,11 @@
                 <!-- Manual Spec Entry (shown when lookup fails) -->
                 <div class="col-12" id="manualSpecsSection" style="display: none;">
                     <div class="card border-warning">
-                        <div class="card-header bg-warning bg-opacity-25">
-                            <strong><i class="bi bi-pencil"></i> Manual Spec Entry</strong>
-                            <small class="text-muted ms-2">(Optional - fill in what you know)</small>
+                        <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong><i class="bi bi-pencil"></i> Manual Spec Entry</strong>
+                                <small class="text-muted ms-2">(Optional - fill in what you know)</small>
+                            </div>
                         </div>
                         <div class="card-body">
                             <!-- CPU Specs -->
@@ -465,10 +480,69 @@ const lookedUpName = document.getElementById('lookedUpName');
 const inventoryForm = document.getElementById('inventoryForm');
 const manualSpecsSection = document.getElementById('manualSpecsSection');
 const clearSpecsBtn = document.getElementById('clearSpecsBtn');
+const manualModeToggle = document.getElementById('manualModeToggle');
+const lookupGroup = document.getElementById('lookupGroup');
+const lookupOptions = document.getElementById('lookupOptions');
 
 // Track lookup state to avoid redundant lookups
 let lookupAttempted = false;
 let manualEntryMode = false;
+
+// Load manual mode preference from localStorage
+if (localStorage.getItem('techreadout_manual_mode') === 'true') {
+    manualModeToggle.checked = true;
+    enableManualMode();
+}
+
+// Manual mode toggle handler
+manualModeToggle.addEventListener('change', function() {
+    if (this.checked) {
+        enableManualMode();
+        localStorage.setItem('techreadout_manual_mode', 'true');
+    } else {
+        disableManualMode();
+        localStorage.setItem('techreadout_manual_mode', 'false');
+    }
+});
+
+function enableManualMode() {
+    // Hide lookup button and options
+    lookupBtn.style.display = 'none';
+    lookupOptions.style.display = 'none';
+    
+    // Show manual specs section
+    manualSpecsSection.style.display = 'block';
+    showManualSpecs(true);
+    
+    // Update placeholder
+    modelInput.placeholder = 'Enter model name';
+    
+    // Set manual entry mode flag
+    manualEntryMode = true;
+    
+    // Show info message
+    showStatus('Manual entry mode - fill in specs below', 'info');
+}
+
+function disableManualMode() {
+    // Show lookup button and options
+    lookupBtn.style.display = '';
+    lookupOptions.style.display = '';
+    
+    // Hide manual specs section (unless lookup was attempted)
+    if (!lookupAttempted) {
+        manualSpecsSection.style.display = 'none';
+    }
+    
+    // Reset placeholder
+    modelInput.placeholder = 'e.g., RTX 4070, i7-9700K';
+    
+    // Clear manual entry mode flag
+    manualEntryMode = false;
+    
+    // Clear status
+    lookupStatus.style.display = 'none';
+}
 
 // Sync lookedUpName to modelInput (so edits persist)
 lookedUpName.addEventListener('input', function() {
@@ -593,12 +667,14 @@ async function doLookup(silent = false) {
     if (!silent) showStatus('Searching for specs...', 'info');
     
     try {
+        const useIntelArk = document.getElementById('useIntelArk').checked;
         const response = await fetch('/api/lookup', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 query: query,
-                component_type: ctName
+                component_type: ctName,
+                use_intel_ark: useIntelArk
             })
         });
         

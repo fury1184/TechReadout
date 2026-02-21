@@ -308,7 +308,7 @@ def inventory_assign(id):
                 quantity=assign_qty,
                 purchase_date=item.purchase_date,
                 purchase_price=item.purchase_price,
-                condition=item.item_condition,
+                item_condition=item.item_condition,
                 location=item.location,
                 notes=item.notes,
                 status='In Use',
@@ -543,6 +543,81 @@ def specs_list():
                          current_type=component_type,
                          current_manufacturer=manufacturer,
                          search=search)
+
+
+@bp.route('/specs/<int:id>/delete', methods=['POST'])
+def specs_delete(id):
+    """Delete a single spec entry."""
+    spec = HardwareSpec.query.get_or_404(id)
+    model_name = spec.model
+    
+    # Check if any inventory items use this spec
+    inventory_count = Inventory.query.filter_by(hardware_spec_id=id).count()
+    if inventory_count > 0:
+        flash(f'Cannot delete: {inventory_count} inventory item(s) use this spec. Remove or reassign them first.', 'danger')
+        return redirect(url_for('main.specs_list'))
+    
+    db.session.delete(spec)
+    db.session.commit()
+    flash(f'Deleted spec: {model_name}', 'success')
+    return redirect(url_for('main.specs_list'))
+
+
+@bp.route('/specs/bulk-delete', methods=['POST'])
+def specs_bulk_delete():
+    """Bulk delete specs by IDs, source, or type."""
+    spec_ids = request.form.get('spec_ids', '').strip()
+    delete_source = request.form.get('delete_source', '').strip()
+    delete_type = request.form.get('delete_type', '').strip()
+    
+    deleted_count = 0
+    skipped_count = 0
+    
+    if spec_ids:
+        # Delete selected specs
+        ids = [int(id.strip()) for id in spec_ids.split(',') if id.strip().isdigit()]
+        for spec_id in ids:
+            spec = HardwareSpec.query.get(spec_id)
+            if spec:
+                # Check if used by inventory
+                if Inventory.query.filter_by(hardware_spec_id=spec_id).count() > 0:
+                    skipped_count += 1
+                else:
+                    db.session.delete(spec)
+                    deleted_count += 1
+    
+    elif delete_source:
+        # Delete by source
+        specs = HardwareSpec.query.filter(
+            HardwareSpec.source_url.ilike(f'%{delete_source}%')
+        ).all()
+        for spec in specs:
+            if Inventory.query.filter_by(hardware_spec_id=spec.id).count() > 0:
+                skipped_count += 1
+            else:
+                db.session.delete(spec)
+                deleted_count += 1
+    
+    elif delete_type:
+        # Delete by component type
+        specs = HardwareSpec.query.filter_by(component_type_id=int(delete_type)).all()
+        for spec in specs:
+            if Inventory.query.filter_by(hardware_spec_id=spec.id).count() > 0:
+                skipped_count += 1
+            else:
+                db.session.delete(spec)
+                deleted_count += 1
+    
+    db.session.commit()
+    
+    if deleted_count > 0:
+        flash(f'Deleted {deleted_count} spec(s).', 'success')
+    if skipped_count > 0:
+        flash(f'Skipped {skipped_count} spec(s) that are in use by inventory items.', 'warning')
+    if deleted_count == 0 and skipped_count == 0:
+        flash('No specs were deleted.', 'info')
+    
+    return redirect(url_for('main.specs_list'))
 
 
 @bp.route('/hosts')

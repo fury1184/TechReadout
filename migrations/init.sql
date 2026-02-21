@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS hardware_specs (
     ram_type VARCHAR(20),
     ram_speed INT,
     ram_cas_latency VARCHAR(20),
+    ram_modules INT,
     
     -- Motherboard-specific
     mobo_socket VARCHAR(50),
