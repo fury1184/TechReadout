@@ -38,28 +38,68 @@ def lookup_hardware():
             q = q.filter(HardwareSpec.component_type_id == ct_filter)
         return q
     
+    import re
+    
+    def extract_version(text):
+        """Extract version indicators like v1, v2, v3, v4 from text."""
+        match = re.search(r'v(\d+)', text.lower())
+        return match.group(1) if match else None
+    
+    def models_match(query_str, model_str):
+        """Check if models match, including version numbers."""
+        query_lower = query_str.lower()
+        model_lower = model_str.lower()
+        
+        # Extract version numbers
+        query_version = extract_version(query_str)
+        model_version = extract_version(model_str)
+        
+        # If both have versions, they must match
+        if query_version and model_version:
+            if query_version != model_version:
+                return False
+        # If query has version but model doesn't (or vice versa), no match
+        elif query_version or model_version:
+            return False
+        
+        # Also check for CPU suffix mismatches (K, F, X, etc.)
+        query_suffix = re.search(r'(\d{4,5})([kfxwsue]*)\b', query_lower)
+        model_suffix = re.search(r'(\d{4,5})([kfxwsue]*)\b', model_lower)
+        
+        if query_suffix and model_suffix:
+            if query_suffix.group(1) == model_suffix.group(1):  # Same model number
+                if query_suffix.group(2) != model_suffix.group(2):  # Different suffix
+                    return False
+        
+        return True
+    
     # Strategy 1: Exact model match
     existing = base_query().filter(
         HardwareSpec.model.ilike(query)
     ).first()
     
-    # Strategy 2: Model contains query (but query must be specific enough - at least 4 chars)
+    # Strategy 2: Model contains query (but validate version numbers)
     if not existing and len(query) >= 4:
-        existing = base_query().filter(
+        candidates = base_query().filter(
             HardwareSpec.model.ilike(f'%{query}%')
-        ).first()
+        ).all()
+        for spec in candidates:
+            if models_match(query, spec.model):
+                existing = spec
+                break
     
     # Strategy 3: Query contains model (e.g., "MSI Z390 Mortar" contains "Z390 Mortar")
     if not existing:
         all_specs = base_query().all()
         for spec in all_specs:
             if spec.model and len(spec.model) >= 4 and spec.model.lower() in query.lower():
-                existing = spec
-                break
+                if models_match(query, spec.model):
+                    existing = spec
+                    break
             # Also check manufacturer + model
             if spec.manufacturer and spec.model:
                 full_name = f"{spec.manufacturer} {spec.model}".lower()
-                if full_name in query.lower() or query.lower() in full_name:
+                if (full_name in query.lower() or query.lower() in full_name) and models_match(query, spec.model):
                     existing = spec
                     break
     
@@ -76,7 +116,7 @@ def lookup_hardware():
                 model_lower = (spec.model or '').lower()
                 # Check if model-specific words appear in the spec model
                 matches = sum(1 for word in model_words if word in model_lower)
-                if matches >= len(model_words):  # All model words must match
+                if matches >= len(model_words) and models_match(query, spec.model):
                     existing = spec
                     break
     

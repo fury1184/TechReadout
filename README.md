@@ -1,6 +1,6 @@
 # TechReadout
 
-**Version 1.6.9**
+**Version 1.7.0**
 
 A containerized hardware inventory management system with on-demand spec lookup. Track your PC components, manage builds, and maintain inventory across multiple machines.
 
@@ -239,6 +239,13 @@ If you find this project useful, consider buying me a coffee:
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/fury1184)
 
 ## Changelog
+
+### v1.7.0
+- **FIX: Version number validation** - E5-2680v1 no longer matches E5-2680v2
+- Database search now validates:
+  - Version numbers (v1, v2, v3, v4) must match exactly
+  - CPU suffixes (K, F, X, W) must match exactly
+  - E5-2680 won't match E5-2680v2 (missing version)
 
 ### v1.6.9
 - **FIX: Assign inventory error** - Fixed `condition` → `item_condition` typo
