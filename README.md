@@ -1,6 +1,6 @@
 # TechReadout
 
-**Version 1.7.0**
+**Version 1.7.2**
 
 A containerized hardware inventory management system with on-demand spec lookup. Track your PC components, manage builds, and maintain inventory across multiple machines.
 
@@ -239,6 +239,27 @@ If you find this project useful, consider buying me a coffee:
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20Me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/fury1184)
 
 ## Changelog
+
+### v1.7.2
+- **NEW: Playwright Amazon fallback for GPUs** - AIB cards (Zotac, EVGA, etc.) now use Amazon
+- GPU lookup order: BeautifulSoup → Playwright TechPowerUp → Playwright Amazon
+- Removed GPU manufacturer site lookups (they used Scrape.Do credits)
+- Added GPU spec parsing from Amazon:
+  - VRAM size and type (GDDR5/GDDR6/GDDR6X)
+  - TDP/Power consumption
+  - Boost clock speed
+- All GPU lookups are now FREE (no API credits needed)
+
+### v1.7.1
+- **NEW: Playwright Amazon scraping (FREE!)** - No API credits needed
+- Motherboards, PSUs, RAM, Storage now use Playwright → Amazon
+- Extracts specs from Amazon product pages:
+  - Motherboard: socket, chipset, form factor, memory slots
+  - PSU: wattage, efficiency rating, modular type
+  - RAM: size, type, speed
+  - Storage: capacity, interface, form factor
+- Scrape.Do only used as absolute last resort
+- Updated Spec Lookup page with new method list
 
 ### v1.7.0
 - **FIX: Version number validation** - E5-2680v1 no longer matches E5-2680v2

@@ -325,7 +325,7 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
         query: Model name to search for (e.g., "RTX 4070", "i7-9700K", "ROG STRIX B550-F")
         component_type: 'GPU', 'CPU', 'Motherboard', or 'auto' to detect
         lite_mode: If True, only try primary source (saves credits but may miss some results)
-        use_intel_ark: If True, use Intel ARK for Intel CPUs (costs ~6 extra credits)
+        use_intel_ark: If True, use Intel ARK for Intel CPUs (FREE with Playwright)
         
     Returns:
         Dict with specs if found, None otherwise
@@ -336,54 +336,136 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
     
     print(f"[Lookup] Searching for '{query}' as {component_type}" + (" (LITE MODE)" if lite_mode else "") + (" (Intel ARK enabled)" if use_intel_ark else ""))
     
-    # Handle motherboard lookups separately (different sources)
+    # Handle motherboard lookups - try Playwright Amazon first (FREE)
     if component_type == 'Motherboard':
-        print("[Lookup] Motherboard detected, searching Amazon + manufacturer sites...")
-        result = search_motherboard(query)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                if validate_result(query, result.get('model'), 'Motherboard'):
-                    print("[Lookup] Success with motherboard search")
-                    return result
-                else:
-                    print("[Lookup] Motherboard result didn't match query")
+        print("[Lookup] Motherboard detected, trying Playwright Amazon (FREE)...")
+        result = search_amazon_playwright(query, 'Motherboard')
+        if result and result.get('model'):
+            if validate_result(query, result.get('model'), 'Motherboard'):
+                print("[Lookup] Success with Playwright Amazon")
+                return result
+            else:
+                print("[Lookup] Playwright Amazon result didn't match query")
+        
+        # Fall back to Scrape.Do if available and not in lite mode
+        if not lite_mode and SCRAPEDO_TOKEN:
+            print("[Lookup] Trying Scrape.Do for motherboard...")
+            result = search_motherboard(query)
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    if validate_result(query, result.get('model'), 'Motherboard'):
+                        print("[Lookup] Success with Scrape.Do motherboard search")
+                        return result
+        
         print("[Lookup] Motherboard lookup failed")
         return None
     
-    # Handle PSU lookups (Amazon)
+    # Handle PSU lookups - try Playwright Amazon first (FREE)
     if component_type == 'PSU':
-        print("[Lookup] PSU detected, searching Amazon...")
-        result = search_psu(query)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                if validate_result(query, result.get('model'), 'PSU'):
-                    print("[Lookup] Success with PSU search")
-                    return result
-                else:
-                    print("[Lookup] PSU result didn't match query")
+        print("[Lookup] PSU detected, trying Playwright Amazon (FREE)...")
+        result = search_amazon_playwright(query, 'PSU')
+        if result and result.get('model'):
+            if validate_result(query, result.get('model'), 'PSU'):
+                print("[Lookup] Success with Playwright Amazon")
+                return result
+            else:
+                print("[Lookup] Playwright Amazon result didn't match query")
+        
+        # Fall back to Scrape.Do if available and not in lite mode
+        if not lite_mode and SCRAPEDO_TOKEN:
+            print("[Lookup] Trying Scrape.Do for PSU...")
+            result = search_psu(query)
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    if validate_result(query, result.get('model'), 'PSU'):
+                        print("[Lookup] Success with Scrape.Do PSU search")
+                        return result
+        
         print("[Lookup] PSU lookup failed")
         return None
     
-    # Handle other component types with generic Amazon search
+    # Handle RAM lookups - try Playwright Amazon (FREE)
+    if component_type == 'RAM':
+        print("[Lookup] RAM detected, trying Playwright Amazon (FREE)...")
+        result = search_amazon_playwright(query, 'RAM')
+        if result and result.get('model'):
+            if validate_result(query, result.get('model'), 'RAM'):
+                print("[Lookup] Success with Playwright Amazon")
+                return result
+            else:
+                print("[Lookup] Playwright Amazon result didn't match query")
+        
+        # Fall back to Scrape.Do if available and not in lite mode
+        if not lite_mode and SCRAPEDO_TOKEN:
+            print("[Lookup] Trying Scrape.Do for RAM...")
+            result = search_generic(query, 'RAM')
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    if validate_result(query, result.get('model'), 'RAM'):
+                        print("[Lookup] Success with Scrape.Do RAM search")
+                        return result
+        
+        print("[Lookup] RAM lookup failed")
+        return None
+    
+    # Handle Storage lookups - try Playwright Amazon (FREE)
+    if component_type == 'Storage':
+        print("[Lookup] Storage detected, trying Playwright Amazon (FREE)...")
+        result = search_amazon_playwright(query, 'Storage')
+        if result and result.get('model'):
+            if validate_result(query, result.get('model'), 'Storage'):
+                print("[Lookup] Success with Playwright Amazon")
+                return result
+            else:
+                print("[Lookup] Playwright Amazon result didn't match query")
+        
+        # Fall back to Scrape.Do if available and not in lite mode
+        if not lite_mode and SCRAPEDO_TOKEN:
+            print("[Lookup] Trying Scrape.Do for Storage...")
+            result = search_generic(query, 'Storage')
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    if validate_result(query, result.get('model'), 'Storage'):
+                        print("[Lookup] Success with Scrape.Do Storage search")
+                        return result
+        
+        print("[Lookup] Storage lookup failed")
+        return None
+    
+    # Handle other component types with generic Playwright Amazon search
     if component_type not in ['CPU', 'GPU']:
-        print(f"[Lookup] {component_type} detected, trying generic Amazon search...")
-        result = search_generic(query, component_type)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                if validate_result(query, result.get('model'), component_type):
-                    print(f"[Lookup] Success with generic search for {component_type}")
-                    return result
-                else:
-                    print("[Lookup] Generic result didn't match query")
+        print(f"[Lookup] {component_type} detected, trying Playwright Amazon (FREE)...")
+        result = search_amazon_playwright(query, component_type)
+        if result and result.get('model'):
+            if validate_result(query, result.get('model'), component_type):
+                print(f"[Lookup] Success with Playwright Amazon for {component_type}")
+                return result
+        
+        # Fall back to Scrape.Do if available
+        if not lite_mode and SCRAPEDO_TOKEN:
+            print(f"[Lookup] Trying Scrape.Do for {component_type}...")
+            result = search_generic(query, component_type)
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    if validate_result(query, result.get('model'), component_type):
+                        print(f"[Lookup] Success with Scrape.Do for {component_type}")
+                        return result
+        
         print(f"[Lookup] {component_type} lookup failed")
         return None
     
@@ -404,23 +486,8 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
             else:
                 print(f"[Lookup] Intel ARK result '{result_model}' didn't match query numbers {query_nums}")
     
-    # For GPUs with AIB partner names, skip manufacturer sites in lite_mode (they use credits)
-    if component_type == 'GPU' and not lite_mode:
-        manufacturer = detect_gpu_manufacturer(query)
-        if manufacturer:
-            print(f"[Lookup] Detected GPU manufacturer: {manufacturer}, trying their site first...")
-            result = search_gpu_manufacturer(query)
-            if result:
-                if result.get('error') == 'credits_exhausted':
-                    print("[Lookup] Scrape.Do credits exhausted")
-                    return {'error': 'credits_exhausted'}
-                if result.get('model'):
-                    if validate_result(query, result.get('model'), 'GPU'):
-                        print("[Lookup] Success with GPU manufacturer site")
-                        return result
-                    else:
-                        print("[Lookup] GPU manufacturer result didn't match query, trying TechPowerUp...")
-            print(f"[Lookup] {manufacturer} site lookup failed, falling back to TechPowerUp...")
+    # For GPUs with AIB partner names, skip manufacturer sites (they use Scrape.Do credits)
+    # Instead, we'll use Playwright methods which are FREE
     
     # =========================================================================
     # FREE METHODS (no API credits)
@@ -436,15 +503,25 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
         else:
             print("[Lookup] BeautifulSoup result didn't match query, skipping")
     
-    # Try 2: Playwright browser (FREE but slower, ~10-15 seconds)
-    print("[Lookup] Method 2: Playwright (FREE, slower ~10-15s)...")
+    # Try 2: Playwright TechPowerUp (FREE but slower, ~10-15 seconds)
+    print("[Lookup] Method 2: Playwright TechPowerUp (FREE, slower ~10-15s)...")
     result = search_with_playwright(query, component_type)
     if result and result.get('model'):
         if validate_result(query, result.get('model'), component_type):
-            print("[Lookup] Success with Playwright")
+            print("[Lookup] Success with Playwright TechPowerUp")
             return result
         else:
-            print("[Lookup] Playwright result didn't match query, skipping")
+            print("[Lookup] Playwright TechPowerUp result didn't match query, skipping")
+    
+    # Try 3: Playwright Amazon (FREE) - good for AIB cards and retail CPUs
+    print("[Lookup] Method 3: Playwright Amazon (FREE, ~15-20s)...")
+    result = search_amazon_playwright(query, component_type)
+    if result and result.get('model'):
+        if validate_result(query, result.get('model'), component_type):
+            print("[Lookup] Success with Playwright Amazon")
+            return result
+        else:
+            print("[Lookup] Playwright Amazon result didn't match query, skipping")
     
     # In lite mode, stop here (only free methods)
     if lite_mode:
@@ -452,12 +529,14 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
         return None
     
     # =========================================================================
-    # PAID METHODS (Scrape.Do API credits) - LAST RESORT
+    # PAID METHODS (Scrape.Do API credits) - ABSOLUTE LAST RESORT
     # =========================================================================
     
+    print("[Lookup] All FREE methods failed. Trying Scrape.Do as last resort...")
+    
     if SCRAPEDO_TOKEN:
-        # Try 3: Scrape.Do direct URL (~1 credit)
-        print("[Lookup] Method 3: Scrape.Do direct (~1 credit)...")
+        # Try Scrape.Do direct URL (~1 credit)
+        print("[Lookup] Scrape.Do direct (~1 credit)...")
         result = search_with_scrapedo(query, component_type)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -470,8 +549,8 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
                 else:
                     print("[Lookup] Scrape.Do result didn't match query, skipping")
         
-        # Try 4: TechPowerUp site search via Scrape.Do (~2 credits)
-        print("[Lookup] Method 4: TechPowerUp site search (~2 credits)...")
+        # Try TechPowerUp site search via Scrape.Do (~2 credits)
+        print("[Lookup] TechPowerUp site search via Scrape.Do (~2 credits)...")
         result = search_tpu_via_site_search(query, component_type)
         if result:
             if result.get('error') == 'credits_exhausted':
@@ -483,40 +562,34 @@ def lookup_hardware(query: str, component_type: str = 'auto', lite_mode: bool = 
                     return result
                 else:
                     print("[Lookup] TechPowerUp site search result didn't match query, skipping")
+        
+        # Try Scrape.Do Amazon for GPUs
+        if component_type == 'GPU':
+            print("[Lookup] Scrape.Do Amazon GPU (~2 credits)...")
+            result = search_amazon_gpu(query)
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    print("[Lookup] Success with Scrape.Do Amazon GPU")
+                    return result
+        
+        # Try Scrape.Do Amazon for CPUs
+        if component_type == 'CPU':
+            print("[Lookup] Scrape.Do Amazon CPU (~2 credits)...")
+            result = search_amazon_cpu(query)
+            if result:
+                if result.get('error') == 'credits_exhausted':
+                    print("[Lookup] Scrape.Do credits exhausted")
+                    return {'error': 'credits_exhausted'}
+                if result.get('model'):
+                    print("[Lookup] Success with Scrape.Do Amazon CPU")
+                    return result
     else:
         print("[Lookup] Scrape.Do not configured (set SCRAPEDO_TOKEN)")
     
-    print("[Lookup] All primary methods failed")
-    
-    # Last resort fallbacks use additional credits - skip in lite_mode
-    if lite_mode:
-        print("[Lookup] Lite mode: Skipping Amazon fallbacks to save credits")
-        return None
-    
-    # Last resort for GPUs: try Amazon (has AIB-specific listings)
-    if component_type == 'GPU':
-        print("[Lookup] Trying Amazon as last resort for GPU (~2 credits)...")
-        result = search_amazon_gpu(query)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                print("[Lookup] Success with Amazon GPU search")
-                return result
-    
-    # Last resort for CPUs: try Amazon
-    if component_type == 'CPU':
-        print("[Lookup] Trying Amazon as last resort for CPU (~2 credits)...")
-        result = search_amazon_cpu(query)
-        if result:
-            if result.get('error') == 'credits_exhausted':
-                print("[Lookup] Scrape.Do credits exhausted")
-                return {'error': 'credits_exhausted'}
-            if result.get('model'):
-                print("[Lookup] Success with Amazon CPU search")
-                return result
-    
+    print("[Lookup] All methods failed")
     return None
 
 
@@ -3505,6 +3578,321 @@ def parse_intel_ark_page(html: str, source_url: str) -> Optional[Dict]:
     
     print(f"[Lookup] Intel ARK parsed: {model} - {specs.get('cpu_cores', '?')}C/{specs.get('cpu_threads', '?')}T")
     return result
+
+
+def search_amazon_playwright(query: str, component_type: str) -> Optional[Dict]:
+    """
+    Search Amazon using Playwright (FREE - no API credits).
+    Good for motherboards, PSUs, RAM, and other components not on TechPowerUp.
+    """
+    if not is_playwright_available():
+        print("[Lookup] Playwright not available for Amazon")
+        return None
+    
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        print(f"[Lookup] Playwright Amazon search for: {query} ({component_type})")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            page = context.new_page()
+            page.set_default_timeout(30000)
+            
+            # Search Google for Amazon product page
+            search_query = f'site:amazon.com "{query}"'
+            google_url = f"https://www.google.com/search?q={requests.utils.quote(search_query)}"
+            
+            print(f"[Lookup] Playwright searching Google for Amazon...")
+            page.goto(google_url, wait_until='domcontentloaded')
+            page.wait_for_timeout(2000)
+            
+            # Find Amazon product link
+            amazon_url = None
+            links = page.query_selector_all('a')
+            
+            for link in links:
+                href = link.get_attribute('href') or ''
+                if 'amazon.com' in href and '/dp/' in href:
+                    # Extract actual URL from Google redirect
+                    if '/url?q=' in href:
+                        amazon_url = href.split('/url?q=')[1].split('&')[0]
+                        amazon_url = requests.utils.unquote(amazon_url)
+                    elif href.startswith('http'):
+                        amazon_url = href
+                    break
+            
+            if not amazon_url:
+                print("[Lookup] No Amazon product link found in Google results")
+                browser.close()
+                return None
+            
+            print(f"[Lookup] Playwright loading Amazon: {amazon_url}")
+            page.goto(amazon_url, wait_until='domcontentloaded')
+            page.wait_for_timeout(3000)
+            
+            content = page.content()
+            browser.close()
+            
+            # Parse Amazon page
+            return parse_amazon_page(content, amazon_url, component_type)
+            
+    except Exception as e:
+        print(f"[Lookup] Playwright Amazon error: {e}")
+    
+    return None
+
+
+def parse_amazon_page(html: str, source_url: str, component_type: str) -> Optional[Dict]:
+    """Parse Amazon product page for specs."""
+    soup = BeautifulSoup(html, 'lxml')
+    
+    # Get product title
+    title_elem = soup.select_one('#productTitle, #title')
+    if not title_elem:
+        print("[Lookup] Could not find product title on Amazon page")
+        return None
+    
+    title = title_elem.get_text(strip=True)
+    print(f"[Lookup] Amazon product title: {title}")
+    
+    # Extract manufacturer from title or page
+    manufacturer = None
+    common_brands = [
+        'ASUS', 'MSI', 'Gigabyte', 'ASRock', 'EVGA', 'Corsair', 'NZXT',
+        'Seasonic', 'Thermaltake', 'be quiet!', 'Cooler Master', 'Fractal',
+        'G.Skill', 'Kingston', 'Crucial', 'Samsung', 'Western Digital', 'WD',
+        'Seagate', 'Intel', 'AMD', 'NVIDIA', 'Sapphire', 'XFX', 'PowerColor',
+        'Zotac', 'PNY', 'Noctua', 'Arctic', 'Deepcool', 'Lian Li'
+    ]
+    
+    title_lower = title.lower()
+    for brand in common_brands:
+        if brand.lower() in title_lower:
+            manufacturer = brand
+            break
+    
+    # Try to find manufacturer in product details
+    if not manufacturer:
+        brand_elem = soup.select_one('[class*="brand"], #bylineInfo')
+        if brand_elem:
+            manufacturer = brand_elem.get_text(strip=True).replace('Brand: ', '').replace('Visit the ', '').replace(' Store', '')
+    
+    # Clean up model name from title
+    model = clean_amazon_title(title, component_type)
+    
+    # Extract specs from product details table
+    specs = {}
+    
+    # Look for product details table
+    detail_tables = soup.select('#productDetails_techSpec_section_1 tr, #prodDetails tr, .prodDetTable tr, #detailBullets_feature_div li')
+    
+    for row in detail_tables:
+        # Get label and value
+        cells = row.select('th, td') if row.name == 'tr' else [row]
+        
+        if len(cells) >= 2:
+            label = cells[0].get_text(strip=True).lower()
+            value = cells[1].get_text(strip=True)
+        elif len(cells) == 1:
+            text = cells[0].get_text(strip=True)
+            if ':' in text:
+                parts = text.split(':', 1)
+                label = parts[0].lower().strip()
+                value = parts[1].strip()
+            else:
+                continue
+        else:
+            continue
+        
+        # Parse based on component type
+        if component_type == 'Motherboard':
+            if 'socket' in label or 'cpu socket' in label:
+                specs['mobo_socket'] = value
+            elif 'chipset' in label:
+                specs['mobo_chipset'] = value
+            elif 'form factor' in label:
+                specs['mobo_form_factor'] = value
+            elif 'memory slots' in label or 'ram slots' in label:
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['mobo_memory_slots'] = int(match.group(1))
+            elif 'memory type' in label or 'ram type' in label:
+                if 'DDR5' in value.upper():
+                    specs['mobo_memory_type'] = 'DDR5'
+                elif 'DDR4' in value.upper():
+                    specs['mobo_memory_type'] = 'DDR4'
+            elif 'max memory' in label:
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['mobo_max_memory'] = int(match.group(1))
+                    
+        elif component_type == 'PSU':
+            if 'wattage' in label or 'watt' in label:
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['psu_wattage'] = int(match.group(1))
+            elif 'efficiency' in label or '80' in label:
+                specs['psu_efficiency'] = value
+            elif 'modular' in label:
+                if 'full' in value.lower():
+                    specs['psu_modular'] = 'Full'
+                elif 'semi' in value.lower():
+                    specs['psu_modular'] = 'Semi'
+                elif 'non' in value.lower() or 'no' in value.lower():
+                    specs['psu_modular'] = 'None'
+                    
+        elif component_type == 'RAM':
+            if 'memory size' in label or 'capacity' in label:
+                match = re.search(r'(\d+)\s*GB', value, re.I)
+                if match:
+                    specs['ram_size'] = int(match.group(1))
+            elif 'memory type' in label or 'technology' in label:
+                if 'DDR5' in value.upper():
+                    specs['ram_type'] = 'DDR5'
+                elif 'DDR4' in value.upper():
+                    specs['ram_type'] = 'DDR4'
+            elif 'speed' in label:
+                match = re.search(r'(\d{3,5})', value)
+                if match:
+                    specs['ram_speed'] = int(match.group(1))
+                    
+        elif component_type == 'Storage':
+            if 'capacity' in label:
+                match = re.search(r'(\d+)\s*(TB|GB)', value, re.I)
+                if match:
+                    size = int(match.group(1))
+                    if match.group(2).upper() == 'TB':
+                        size *= 1000
+                    specs['storage_capacity'] = size
+            elif 'interface' in label:
+                specs['storage_interface'] = value
+            elif 'form factor' in label:
+                specs['storage_form_factor'] = value
+                
+        elif component_type == 'GPU':
+            if 'graphics ram' in label or 'video memory' in label or 'vram' in label or 'memory size' in label:
+                match = re.search(r'(\d+)\s*GB', value, re.I)
+                if match:
+                    specs['gpu_memory_size'] = int(match.group(1)) * 1024  # Convert to MB
+            elif 'memory type' in label or 'ram type' in label:
+                if 'GDDR6X' in value.upper():
+                    specs['gpu_memory_type'] = 'GDDR6X'
+                elif 'GDDR6' in value.upper():
+                    specs['gpu_memory_type'] = 'GDDR6'
+                elif 'GDDR5' in value.upper():
+                    specs['gpu_memory_type'] = 'GDDR5'
+            elif 'tdp' in label or 'power' in label or 'wattage' in label:
+                match = re.search(r'(\d+)\s*[wW]', value)
+                if match:
+                    specs['gpu_tdp'] = int(match.group(1))
+            elif 'boost clock' in label:
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['gpu_boost_clock'] = int(match.group(1))
+            elif 'base clock' in label or 'core clock' in label:
+                match = re.search(r'(\d+)', value)
+                if match:
+                    specs['gpu_base_clock'] = int(match.group(1))
+    
+    # Also try to extract specs from bullet points
+    bullets = soup.select('#feature-bullets li, .a-unordered-list li')
+    for bullet in bullets:
+        text = bullet.get_text(strip=True).lower()
+        
+        if component_type == 'Motherboard':
+            # Socket detection
+            socket_match = re.search(r'(lga\s*\d{4}|am\d|tr\d)', text, re.I)
+            if socket_match and 'mobo_socket' not in specs:
+                specs['mobo_socket'] = socket_match.group(1).upper().replace(' ', '')
+            # Chipset detection
+            chipset_match = re.search(r'(z\d{3}|b\d{3}|h\d{3}|x\d{3}|a\d{3})', text, re.I)
+            if chipset_match and 'mobo_chipset' not in specs:
+                specs['mobo_chipset'] = chipset_match.group(1).upper()
+            # Form factor
+            if 'atx' in text and 'mobo_form_factor' not in specs:
+                if 'micro' in text or 'matx' in text or 'm-atx' in text:
+                    specs['mobo_form_factor'] = 'mATX'
+                elif 'mini' in text or 'itx' in text:
+                    specs['mobo_form_factor'] = 'ITX'
+                elif 'eatx' in text or 'e-atx' in text:
+                    specs['mobo_form_factor'] = 'EATX'
+                else:
+                    specs['mobo_form_factor'] = 'ATX'
+                    
+        elif component_type == 'PSU':
+            # Wattage detection
+            watt_match = re.search(r'(\d{3,4})\s*w(?:att)?', text, re.I)
+            if watt_match and 'psu_wattage' not in specs:
+                specs['psu_wattage'] = int(watt_match.group(1))
+            # Efficiency
+            eff_match = re.search(r'80\s*\+?\s*(titanium|platinum|gold|silver|bronze)', text, re.I)
+            if eff_match and 'psu_efficiency' not in specs:
+                specs['psu_efficiency'] = f"80+ {eff_match.group(1).title()}"
+                
+        elif component_type == 'GPU':
+            # VRAM detection
+            vram_match = re.search(r'(\d+)\s*gb\s*(?:gddr|vram|memory)', text, re.I)
+            if vram_match and 'gpu_memory_size' not in specs:
+                specs['gpu_memory_size'] = int(vram_match.group(1)) * 1024
+            # Memory type
+            if 'gddr6x' in text and 'gpu_memory_type' not in specs:
+                specs['gpu_memory_type'] = 'GDDR6X'
+            elif 'gddr6' in text and 'gpu_memory_type' not in specs:
+                specs['gpu_memory_type'] = 'GDDR6'
+            elif 'gddr5' in text and 'gpu_memory_type' not in specs:
+                specs['gpu_memory_type'] = 'GDDR5'
+            # TDP
+            tdp_match = re.search(r'(\d{2,3})\s*w(?:att)?\s*(?:tdp|power)', text, re.I)
+            if tdp_match and 'gpu_tdp' not in specs:
+                specs['gpu_tdp'] = int(tdp_match.group(1))
+            # Boost clock
+            boost_match = re.search(r'boost[:\s]*(\d{4})\s*mhz', text, re.I)
+            if boost_match and 'gpu_boost_clock' not in specs:
+                specs['gpu_boost_clock'] = int(boost_match.group(1))
+    
+    if not model:
+        print("[Lookup] Could not extract model name from Amazon")
+        return None
+    
+    result = {
+        'component_type': component_type,
+        'manufacturer': manufacturer,
+        'model': model,
+        'source_url': source_url,
+        **specs
+    }
+    
+    print(f"[Lookup] Amazon parsed: {manufacturer} {model} - {specs}")
+    return result
+
+
+def clean_amazon_title(title: str, component_type: str) -> str:
+    """Clean up Amazon product title to extract model name."""
+    # Remove common suffixes and marketing text
+    remove_patterns = [
+        r'\([^)]*\)',  # Remove parenthetical content
+        r',\s*[\w\s]+$',  # Remove trailing comma and text
+        r'\s*-\s*[\w\s]+$',  # Remove trailing dash and text
+        r'\b(desktop|computer|pc|gaming|bundle)\b',
+        r'\b(with|includes|featuring)\b.*$',
+    ]
+    
+    result = title
+    for pattern in remove_patterns:
+        result = re.sub(pattern, '', result, flags=re.I)
+    
+    # Clean up whitespace
+    result = ' '.join(result.split())
+    
+    # Truncate if still too long
+    if len(result) > 100:
+        result = result[:100].rsplit(' ', 1)[0]
+    
+    return result.strip()
 
 
 # =============================================================================
