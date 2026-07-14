@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ host.hostname }} - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-pencil text-muted"></i> Edit Host
+    </h1>
+    <a href="{{ url_for('main.hosts_detail', id=host.id) }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Cancel
+    </a>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Hostname <span class="text-danger">*</span></label>
+                        <input type="text" name="hostname" class="form-control"
+                               value="{{ host.hostname }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            {% for s in ['Active', 'Inactive', 'Planned', 'Decommissioned'] %}
+                            <option value="{{ s }}" {{ 'selected' if host.status == s }}>{{ s }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Purpose</label>
+                        <input type="text" name="purpose" class="form-control"
+                               value="{{ host.purpose or '' }}"
+                               placeholder="e.g. Workstation, NAS, VM Host">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Operating System</label>
+                        <input type="text" name="os" class="form-control"
+                               value="{{ host.os or '' }}"
+                               placeholder="e.g. Windows 11, Ubuntu 24.04, Proxmox VE 8">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">IP Address</label>
+                        <input type="text" name="ip_address" class="form-control"
+                               value="{{ host.ip_address or '' }}"
+                               placeholder="e.g. 192.168.1.100">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">MAC Address</label>
+                        <input type="text" name="mac_address" class="form-control"
+                               value="{{ host.mac_address or '' }}"
+                               placeholder="e.g. AA:BB:CC:DD:EE:FF">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description / Notes</label>
+                        <textarea name="description" class="form-control"
+                                  rows="3" placeholder="Any additional notes...">{{ host.description or '' }}</textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Save Changes
+                        </button>
+                        <a href="{{ url_for('main.hosts_detail', id=host.id) }}"
+                           class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

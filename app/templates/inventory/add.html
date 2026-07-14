@@ -1,0 +1,1077 @@
+{% extends "base.html" %}
+
+{% block title %}Add Inventory Item - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Add Inventory Item</h1>
+    <div>
+        <div class="form-check form-switch d-inline-block me-3">
+            <input class="form-check-input" type="checkbox" id="manualModeToggle">
+            <label class="form-check-label" for="manualModeToggle">Manual Entry Mode</label>
+        </div>
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post" id="inventoryForm">
+            <input type="hidden" name="hardware_spec_id" id="hardwareSpecId" value="">
+            
+            <div class="row g-3">
+                <!-- Component Type -->
+                <div class="col-md-4">
+                    <label class="form-label">Component Type *</label>
+                    <select name="component_type_id" class="form-select" required id="componentType">
+                        {% for ct in component_types %}
+                        <option value="{{ ct.id }}" data-name="{{ ct.name }}"
+                            {{ 'selected' if prefill_type_id and ct.id|string == prefill_type_id|string }}>
+                            {{ ct.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <!-- Model Search with Lookup -->
+                <div class="col-md-5">
+                    <label class="form-label">Model *</label>
+                    <div class="input-group" id="lookupGroup">
+                        <input type="text" name="custom_name" id="modelInput" class="form-control" 
+                               placeholder="e.g., RTX 4070, i7-9700K" required>
+                        <button type="button" class="btn btn-primary" id="lookupBtn">
+                            <i class="bi bi-search"></i> Lookup
+                        </button>
+                    </div>
+                    <div class="form-text">Lookup defaults now live in <a href="{{ url_for('scraper.settings') }}">Lookup Settings</a>.</div>
+                </div>
+                
+                <!-- Manufacturer -->
+                <div class="col-md-3">
+                    <label class="form-label">Manufacturer</label>
+                    <input type="text" name="custom_manufacturer" id="manufacturerInput" class="form-control"
+                           placeholder="e.g., NVIDIA, Intel"
+                           value="{{ prefill_manufacturer or '' }}">
+                </div>
+                
+                <!-- Lookup Status -->
+                <div class="col-12" id="lookupStatus" style="display: none;">
+                    <div class="alert alert-info mb-0" id="lookupMessage">
+                        <i class="bi bi-info-circle"></i> <span></span>
+                    </div>
+                </div>
+
+                <div class="col-12" id="aiImportSuggestion" style="display: none;">
+                    <div class="alert alert-secondary d-flex align-items-center justify-content-between mb-0 py-2">
+                        <span class="small"><i class="bi bi-robot"></i> <strong>Can't find specs?</strong> Generate them with Claude or ChatGPT &mdash; no API credits needed.</span>
+                        <a id="aiImportLink" href="/backup/import-specs" class="btn btn-sm btn-outline-primary ms-3 text-nowrap">
+                            <i class="bi bi-box-arrow-in-down"></i> AI Import
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Specs Display (populated by lookup) -->
+                <div class="col-12" id="specsDisplay" style="display: none;">
+                    <div class="card bg-body-secondary">
+                        <div class="card-body py-2">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div class="flex-grow-1 me-3">
+                                    <label class="form-label small mb-1"><strong>Model Name</strong> (edit if needed)</label>
+                                    <input type="text" id="lookedUpName" class="form-control form-control-sm" placeholder="Model name from lookup">
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-secondary mt-3" id="clearSpecsBtn">
+                                    <i class="bi bi-x-circle"></i> Not right? Enter manually
+                                </button>
+                            </div>
+                            <div>
+                                <strong>Specs:</strong>
+                                <span id="specsInfo"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Manual Spec Entry (shown when lookup fails) -->
+                <div class="col-12" id="manualSpecsSection" style="display: none;">
+                    <div class="card border-warning">
+                        <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong><i class="bi bi-pencil"></i> Manual Spec Entry</strong>
+                                <small class="text-muted ms-2">(Optional - fill in what you know)</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- CPU Specs -->
+                            <div id="cpuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Cores</label>
+                                        <input type="number" name="cpu_cores" class="form-control form-control-sm" placeholder="8">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Threads</label>
+                                        <input type="number" name="cpu_threads" class="form-control form-control-sm" placeholder="16">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Base Clock (GHz)</label>
+                                        <input type="number" name="cpu_base_clock" class="form-control form-control-sm" step="0.1" placeholder="3.6">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Boost Clock (GHz)</label>
+                                        <input type="number" name="cpu_boost_clock" class="form-control form-control-sm" step="0.1" placeholder="5.0">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="cpu_tdp" class="form-control form-control-sm" placeholder="125">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Socket</label>
+                                        <input type="text" name="cpu_socket" class="form-control form-control-sm" placeholder="LGA1700">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- GPU Specs -->
+                            <div id="gpuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">VRAM (GB)</label>
+                                        <input type="number" name="gpu_memory_gb" class="form-control form-control-sm" placeholder="12">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">VRAM Type</label>
+                                        <select name="gpu_memory_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="GDDR6X">GDDR6X</option>
+                                            <option value="GDDR6">GDDR6</option>
+                                            <option value="GDDR5">GDDR5</option>
+                                            <option value="HBM2">HBM2</option>
+                                            <option value="HBM2e">HBM2e</option>
+                                            <option value="HBM3">HBM3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Base Clock (MHz)</label>
+                                        <input type="number" name="gpu_base_clock" class="form-control form-control-sm" placeholder="1920">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Boost Clock (MHz)</label>
+                                        <input type="number" name="gpu_boost_clock" class="form-control form-control-sm" placeholder="2475">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="gpu_tdp" class="form-control form-control-sm" placeholder="200">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Motherboard Specs -->
+                            <div id="moboSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Socket</label>
+                                        <input type="text" name="mobo_socket" class="form-control form-control-sm" placeholder="AM5">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Chipset</label>
+                                        <input type="text" name="mobo_chipset" class="form-control form-control-sm" placeholder="B650">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="mobo_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="E-ATX">E-ATX</option>
+                                            <option value="ATX">ATX</option>
+                                            <option value="Micro-ATX">Micro-ATX</option>
+                                            <option value="Mini-ITX">Mini-ITX</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Memory Type</label>
+                                        <select name="mobo_memory_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="DDR5">DDR5</option>
+                                            <option value="DDR4">DDR4</option>
+                                            <option value="DDR3">DDR3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Memory Slots</label>
+                                        <input type="number" name="mobo_memory_slots" class="form-control form-control-sm" placeholder="4">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">M.2 Slots</label>
+                                        <input type="number" name="mobo_m2_slots" class="form-control form-control-sm" placeholder="2">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- PSU Specs -->
+                            <div id="psuSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Wattage</label>
+                                        <input type="number" name="psu_wattage" class="form-control form-control-sm" placeholder="850">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Efficiency</label>
+                                        <select name="psu_efficiency" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="80+ Titanium">80+ Titanium</option>
+                                            <option value="80+ Platinum">80+ Platinum</option>
+                                            <option value="80+ Gold">80+ Gold</option>
+                                            <option value="80+ Silver">80+ Silver</option>
+                                            <option value="80+ Bronze">80+ Bronze</option>
+                                            <option value="80+">80+</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Modular</label>
+                                        <select name="psu_modular" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="Fully Modular">Fully Modular</option>
+                                            <option value="Semi-Modular">Semi-Modular</option>
+                                            <option value="Non-Modular">Non-Modular</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="psu_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="ATX">ATX</option>
+                                            <option value="SFX">SFX</option>
+                                            <option value="SFX-L">SFX-L</option>
+                                            <option value="TFX">TFX</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- RAM Specs -->
+                            <div id="ramSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Total Capacity (GB)</label>
+                                        <input type="number" name="ram_capacity" class="form-control form-control-sm" placeholder="32">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="ram_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="DDR5">DDR5</option>
+                                            <option value="DDR4">DDR4</option>
+                                            <option value="DDR3">DDR3</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Speed (MHz)</label>
+                                        <input type="number" name="ram_speed" class="form-control form-control-sm" placeholder="6000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">CAS Latency</label>
+                                        <input type="text" name="ram_timings" class="form-control form-control-sm" placeholder="CL30">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Storage Specs -->
+                            <div id="storageSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="storage_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="NVMe SSD">NVMe SSD</option>
+                                            <option value="SATA SSD">SATA SSD</option>
+                                            <option value="HDD">HDD</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Interface</label>
+                                        <select name="storage_interface" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="PCIe 5.0 x4">PCIe 5.0 x4</option>
+                                            <option value="PCIe 4.0 x4">PCIe 4.0 x4</option>
+                                            <option value="PCIe 3.0 x4">PCIe 3.0 x4</option>
+                                            <option value="SATA III">SATA III</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Read Speed (MB/s)</label>
+                                        <input type="number" name="storage_read_speed" class="form-control form-control-sm" placeholder="7000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Write Speed (MB/s)</label>
+                                        <input type="number" name="storage_write_speed" class="form-control form-control-sm" placeholder="6000">
+                                    </div>
+                                </div>
+                                <small class="text-muted">Note: Include capacity in the model name above (e.g., "Samsung 990 Pro 2TB")</small>
+                            </div>
+                            
+                            <!-- Cooler Specs -->
+                            <div id="coolerSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Type</label>
+                                        <select name="cooler_type" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="AIO 360mm">AIO 360mm</option>
+                                            <option value="AIO 280mm">AIO 280mm</option>
+                                            <option value="AIO 240mm">AIO 240mm</option>
+                                            <option value="AIO 120mm">AIO 120mm</option>
+                                            <option value="Air">Air Tower</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Fan Size (mm)</label>
+                                        <select name="cooler_fan_size" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="140">140mm</option>
+                                            <option value="120">120mm</option>
+                                            <option value="92">92mm</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Height (mm)</label>
+                                        <input type="number" name="cooler_height" class="form-control form-control-sm" placeholder="158">
+                                        <small class="text-muted">Air only</small>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">TDP (W)</label>
+                                        <input type="number" name="cooler_tdp_rating" class="form-control form-control-sm" placeholder="250">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Socket Support</label>
+                                        <input type="text" name="cooler_socket_support" class="form-control form-control-sm" placeholder="LGA1700, AM5">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Case Specs -->
+                            <div id="caseSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Form Factor</label>
+                                        <select name="case_form_factor" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="Full Tower">Full Tower</option>
+                                            <option value="Mid Tower">Mid Tower</option>
+                                            <option value="Mini Tower">Mini Tower</option>
+                                            <option value="Mini-ITX">Mini-ITX</option>
+                                            <option value="SFF">SFF</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max GPU Length (mm)</label>
+                                        <input type="number" name="case_max_gpu_length" class="form-control form-control-sm" placeholder="380">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max Cooler Height (mm)</label>
+                                        <input type="number" name="case_max_cooler_height" class="form-control form-control-sm" placeholder="170">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Fan Specs -->
+                            <div id="fanSpecs" class="manual-specs" style="display: none;">
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Size (mm)</label>
+                                        <select name="fan_size" class="form-select form-select-sm">
+                                            <option value="">Select...</option>
+                                            <option value="200">200mm</option>
+                                            <option value="140">140mm</option>
+                                            <option value="120">120mm</option>
+                                            <option value="92">92mm</option>
+                                            <option value="80">80mm</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Max RPM</label>
+                                        <input type="number" name="fan_rpm_max" class="form-control form-control-sm" placeholder="2000">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Airflow (CFM)</label>
+                                        <input type="number" name="fan_airflow" class="form-control form-control-sm" step="0.1" placeholder="60.5">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Generic specs for other types -->
+                            <div id="genericSpecs" class="manual-specs" style="display: none;">
+                                <p class="text-muted small mb-0">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Manual specs not available for this component type. Add details in the Notes field below.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Quantity -->
+                <div class="col-md-3">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" name="quantity" class="form-control" value="1" min="1">
+                </div>
+                
+                <!-- Purchase Price -->
+                <div class="col-md-3">
+                    <label class="form-label">Purchase Price <small class="text-muted fw-normal">(per unit)</small></label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="purchase_price" class="form-control" step="0.01">
+                    </div>
+                </div>
+                
+                <!-- Condition -->
+                <div class="col-md-3">
+                    <label class="form-label">Condition</label>
+                    <select name="condition" class="form-select">
+                        <option value="New">New</option>
+                        <option value="Used">Used</option>
+                        <option value="Refurbished">Refurbished</option>
+                        <option value="For Parts">For Parts</option>
+                    </select>
+                </div>
+                
+                <!-- Status -->
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        <option value="Unverified" selected>Unverified</option>
+                        <option value="Verified">Verified</option>
+                        <option value="Installed">Installed</option>
+                        <option value="Missing">Missing</option>
+                        <option value="Sold">Sold</option>
+                        <option value="Dead">Dead</option>
+                    </select>
+                </div>
+                
+                <!-- Location -->
+                <div class="col-md-6">
+                    <label class="form-label">Location</label>
+                    <input type="text" name="location" class="form-control" placeholder="e.g., Shelf A, Storage Bin 3">
+                </div>
+                
+                <!-- Notes -->
+                <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea name="notes" class="form-control" rows="2" placeholder="Any additional notes..."></textarea>
+                </div>
+                
+                <div class="col-12 d-flex align-items-center gap-3 flex-wrap">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-plus-lg"></i> Add to Inventory
+                    </button>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="add_another" id="addAnother" value="1">
+                        <label class="form-check-label" for="addAnother">
+                            Add another item after saving
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ── eBay Price Prompt Modal (v3.2.0) ────────────────────────────── -->
+{% if ebay_enabled %}
+<div class="modal fade" id="ebayPromptModal" tabindex="-1" aria-labelledby="ebayPromptModalLabel" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ebayPromptModalLabel">
+                    <i class="bi bi-tag"></i> eBay Price Estimate
+                </h5>
+            </div>
+            <div class="modal-body">
+                <div id="ebayPromptLoading" class="text-center py-3">
+                    <span class="spinner-border spinner-border-sm me-2"></span> Checking eBay prices&hellip;
+                </div>
+                <div id="ebayPromptResult" style="display:none;">
+                    <p class="mb-1">eBay median used price for <strong id="ebayPromptModel"></strong>:</p>
+                    <p class="display-6 mb-1">$<span id="ebayPromptPrice"></span></p>
+                    <small class="text-muted"><span id="ebayPromptListings"></span> listings · <span id="ebayPromptCacheNote"></span></small>
+                    <p class="mt-3 mb-0">Use this as the purchase price?</p>
+                </div>
+                <div id="ebayPromptError" style="display:none;">
+                    <p class="text-muted mb-0"><i class="bi bi-info-circle"></i> <span id="ebayPromptErrorText"></span> — you can set the price manually later.</p>
+                </div>
+            </div>
+            <div class="modal-footer" id="ebayPromptFooter">
+                <!-- buttons injected by JS -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ── Human Review Modal (v2.0.0) ─────────────────────────────────── -->
+<div class="modal fade" id="reviewModal" tabindex="-1" aria-labelledby="reviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reviewModalLabel">
+                    <i class="bi bi-person-check"></i> Review Match Candidates
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="reviewModalBody">
+                <!-- populated by showReviewModal() -->
+            </div>
+            <div class="modal-footer justify-content-between">
+                <a id="aiImportModalBtn" href="/backup/import-specs" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-robot"></i> Use AI Import instead
+                </a>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmReviewBtn" disabled>
+                        <i class="bi bi-check-lg"></i> Use Selected Match
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const lookupBtn = document.getElementById('lookupBtn');
+const modelInput = document.getElementById('modelInput');
+const manufacturerInput = document.getElementById('manufacturerInput');
+const componentType = document.getElementById('componentType');
+const hardwareSpecId = document.getElementById('hardwareSpecId');
+const lookupStatus = document.getElementById('lookupStatus');
+const lookupMessage = document.getElementById('lookupMessage');
+const aiImportSuggestion = document.getElementById('aiImportSuggestion');
+const aiImportLink = document.getElementById('aiImportLink');
+const specsDisplay = document.getElementById('specsDisplay');
+const specsInfo = document.getElementById('specsInfo');
+const lookedUpName = document.getElementById('lookedUpName');
+const inventoryForm = document.getElementById('inventoryForm');
+const manualSpecsSection = document.getElementById('manualSpecsSection');
+const clearSpecsBtn = document.getElementById('clearSpecsBtn');
+const manualModeToggle = document.getElementById('manualModeToggle');
+const lookupGroup = document.getElementById('lookupGroup');
+const lookupOptions = document.getElementById('lookupOptions');
+
+let lookupAttempted = false;
+let manualEntryMode = false;
+
+// ── Review modal state ────────────────────────────────────────────────────
+let _reviewModal = null;
+let _selectedCandidate = null;
+let _reviewCandidates = [];
+let _reviewQuery = '';
+let _reviewCtName = '';
+
+// ── Manual mode persistence ───────────────────────────────────────────────
+if (localStorage.getItem('techreadout_manual_mode') === 'true') {
+    manualModeToggle.checked = true;
+    enableManualMode();
+}
+
+manualModeToggle.addEventListener('change', function() {
+    if (this.checked) {
+        enableManualMode();
+        localStorage.setItem('techreadout_manual_mode', 'true');
+    } else {
+        disableManualMode();
+        localStorage.setItem('techreadout_manual_mode', 'false');
+    }
+});
+
+function enableManualMode() {
+    if (lookupBtn) lookupBtn.style.display = 'none';
+    if (lookupOptions) lookupOptions.style.display = 'none';
+    modelInput.placeholder = 'Enter model name';
+    manualEntryMode = true;
+    showManualSpecs(true);
+    showStatus('Manual entry mode — fill in specs below', 'info');
+}
+
+function disableManualMode() {
+    if (lookupBtn) lookupBtn.style.display = '';
+    if (lookupOptions) lookupOptions.style.display = '';
+    modelInput.placeholder = 'e.g., RTX 4070, i7-9700K';
+    manualEntryMode = false;
+    if (!lookupAttempted) manualSpecsSection.style.display = 'none';
+    lookupStatus.style.display = 'none';
+    hideAiImport();
+}
+
+// ── AI Import helpers ─────────────────────────────────────────────────────
+function _getCtName() {
+    const opt = componentType.options[componentType.selectedIndex];
+    return opt ? (opt.dataset.name || opt.text) : '';
+}
+
+function showAiImport(query, ctName) {
+    const params = new URLSearchParams({ query: query || '', type: ctName || '' });
+    aiImportLink.href = '/backup/import-specs?' + params.toString();
+    aiImportSuggestion.style.display = 'block';
+}
+
+function hideAiImport() {
+    aiImportSuggestion.style.display = 'none';
+}
+
+// ── Sync lookedUpName → modelInput ────────────────────────────────────────
+lookedUpName.addEventListener('input', function() {
+    modelInput.value = lookedUpName.value;
+});
+
+// ── Clear specs button ────────────────────────────────────────────────────
+clearSpecsBtn.addEventListener('click', function() {
+    hardwareSpecId.value = '';
+    specsDisplay.style.display = 'none';
+    manualEntryMode = true;
+    showManualSpecs(true);
+    showStatus('Specs cleared. Enter details manually below.', 'info');
+});
+
+// ── Component type map ────────────────────────────────────────────────────
+const specsDivMap = {
+    'CPU': 'cpuSpecs', 'GPU': 'gpuSpecs', 'Motherboard': 'moboSpecs',
+    'PSU': 'psuSpecs', 'RAM': 'ramSpecs', 'Storage': 'storageSpecs',
+    'Cooler': 'coolerSpecs', 'Case': 'caseSpecs', 'Fan': 'fanSpecs'
+};
+
+function showManualSpecs(show, ctName = null) {
+    if (!show) { manualSpecsSection.style.display = 'none'; return; }
+    document.querySelectorAll('.manual-specs').forEach(d => d.style.display = 'none');
+    if (!ctName) ctName = _getCtName();
+    const div = specsDivMap[ctName];
+    document.getElementById(div || 'genericSpecs').style.display = 'block';
+    manualSpecsSection.style.display = 'block';
+}
+
+componentType.addEventListener('change', function() {
+    if (manualSpecsSection.style.display !== 'none') showManualSpecs(true);
+    hardwareSpecId.value = '';
+    specsDisplay.style.display = 'none';
+});
+
+// ── Lookup button / form submit ───────────────────────────────────────────
+lookupBtn.addEventListener('click', async function() { await doLookup(); });
+
+inventoryForm.addEventListener('submit', async function(e) {
+    const query = modelInput.value.trim();
+    if (!query || hardwareSpecId.value || manualEntryMode || lookupAttempted) return;
+    e.preventDefault();
+    showStatus('Looking up specs before saving...', 'info');
+    await doLookup(true);
+    inventoryForm.submit();
+});
+
+modelInput.addEventListener('input', function() {
+    hardwareSpecId.value = '';
+    specsDisplay.style.display = 'none';
+    lookedUpName.value = '';
+    lookupAttempted = false;
+    manualEntryMode = false;
+    manualSpecsSection.style.display = 'none';
+});
+
+// ── Main lookup function ──────────────────────────────────────────────────
+async function doLookup(silent = false) {
+    const query = modelInput.value.trim();
+    if (!query) { if (!silent) showStatus('Please enter a model name', 'warning'); return; }
+
+    lookupAttempted = true;
+    const ctName = _getCtName();
+
+    lookupBtn.disabled = true;
+    lookupBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Looking up...';
+    if (!silent) showStatus('Searching for specs...', 'info');
+
+    try {
+        const response = await fetch('/api/lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query, component_type: ctName
+            })
+        });
+        const data = await response.json();
+
+        // ── Human review needed ───────────────────────────────────────────
+        if (data.status === 'needs_review') {
+            lookupBtn.disabled = false;
+            lookupBtn.innerHTML = '<i class="bi bi-search"></i> Lookup';
+            showStatus(`⚠️ Low-confidence matches found — please review below.`, 'warning');
+            showReviewModal(data.candidates, query, ctName);
+            return;
+        }
+
+        // ── Found (auto-accept) ───────────────────────────────────────────
+        if (data.found) {
+            applyLookupResult(data, silent);
+        } else {
+            // Not found
+            hardwareSpecId.value = '';
+            specsDisplay.style.display = 'none';
+            if (!silent) {
+                manualEntryMode = true;
+                showManualSpecs(true);
+                if (data.no_token) {
+                    showStatus('⚠️ Spec lookup not configured. Enter specs manually.', 'warning');
+                } else if (data.credits_exhausted) {
+                    showStatus('🔴 Scrape.Do credits exhausted. Enter specs manually.', 'danger');
+                } else if (data.unsupported_type) {
+                    showStatus('ℹ️ ' + data.message, 'info');
+                } else {
+                    showStatus('⚠️ No specs found. Enter specs manually below or save as-is.', 'warning');
+                }
+                showAiImport(query, ctName);
+            }
+        }
+    } catch (error) {
+        console.error('Lookup error:', error);
+        if (!silent) {
+            manualEntryMode = true;
+            showManualSpecs(true);
+            showStatus('⚠️ Lookup failed. Enter specs manually below or save as-is.', 'warning');
+            showAiImport(query, _getCtName());
+        }
+    } finally {
+        lookupBtn.disabled = false;
+        lookupBtn.innerHTML = '<i class="bi bi-search"></i> Lookup';
+    }
+}
+
+// ── Apply a found result to the form ─────────────────────────────────────
+function applyLookupResult(data, silent = false) {
+    hardwareSpecId.value = data.spec_id;
+    if (data.manufacturer) manufacturerInput.value = data.manufacturer;
+    if (data.model) modelInput.value = data.model;
+
+    if (data.component_type) {
+        for (let opt of componentType.options) {
+            if (opt.dataset.name === data.component_type) { componentType.value = opt.value; break; }
+        }
+    }
+
+    const parts = buildSpecsPreview(data);
+    if (parts.length > 0) {
+        specsInfo.textContent = parts.join(' · ');
+        specsDisplay.style.display = 'block';
+        lookedUpName.value = data.model || '';
+    }
+    showManualSpecs(false);
+    manualEntryMode = false;
+
+    if (!silent) {
+        const conf = data.confidence ? ` (${data.confidence}% match)` : '';
+        const src = {
+            database: 'Found in database', lookup_cache: 'Found in cache',
+            human_review: 'Selection confirmed', techpowerup: 'Fetched from TechPowerUp',
+            amazon: 'Fetched from Amazon', intel_ark: 'Fetched from Intel ARK',
+            amd_official: 'Fetched from AMD Official', openwebui: 'Guessed by Open WebUI',
+        }[data.source] || 'Fetched from web';
+        showStatus(`✓ ${src}${conf}: ${data.manufacturer || ''} ${data.model}`, 'success');
+        hideAiImport();
+    }
+}
+
+// ── Build key-specs preview array ─────────────────────────────────────────
+function buildSpecsPreview(data) {
+    const parts = [];
+    const ct = data.component_type;
+    if (ct === 'GPU') {
+        if (data.gpu_memory_size) parts.push(`${Math.round(data.gpu_memory_size/1024)}GB ${data.gpu_memory_type || 'VRAM'}`);
+        if (data.gpu_boost_clock) parts.push(`${data.gpu_boost_clock}MHz`);
+        if (data.gpu_tdp) parts.push(`${data.gpu_tdp}W TDP`);
+    } else if (ct === 'CPU') {
+        if (data.cpu_cores) parts.push(`${data.cpu_cores}C/${data.cpu_threads || data.cpu_cores}T`);
+        if (data.cpu_base_clock) parts.push(`${data.cpu_base_clock}GHz`);
+        if (data.cpu_socket) parts.push(data.cpu_socket);
+        if (data.cpu_tdp) parts.push(`${data.cpu_tdp}W`);
+    } else if (ct === 'Motherboard') {
+        if (data.mobo_chipset) parts.push(data.mobo_chipset);
+        if (data.mobo_socket) parts.push(data.mobo_socket);
+        if (data.mobo_form_factor) parts.push(data.mobo_form_factor);
+        if (data.mobo_memory_slots && data.mobo_memory_type) parts.push(`${data.mobo_memory_slots}x ${data.mobo_memory_type}`);
+        else if (data.mobo_memory_type) parts.push(data.mobo_memory_type);
+        if (data.mobo_pcie_x16_slots) parts.push(`${data.mobo_pcie_x16_slots}x PCIe x16`);
+    } else if (ct === 'PSU') {
+        if (data.psu_wattage) parts.push(`${data.psu_wattage}W`);
+        if (data.psu_efficiency) parts.push(data.psu_efficiency);
+        if (data.psu_modular) parts.push(data.psu_modular);
+        if (data.psu_form_factor) parts.push(data.psu_form_factor);
+    } else if (ct === 'RAM') {
+        if (data.ram_size) parts.push(`${data.ram_size}GB`);
+        if (data.ram_type) parts.push(data.ram_type);
+        if (data.ram_speed) parts.push(`${data.ram_speed}MHz`);
+        if (data.ram_cas_latency) parts.push(data.ram_cas_latency);
+    } else if (ct === 'Storage') {
+        if (data.storage_type) parts.push(data.storage_type);
+        if (data.storage_interface) parts.push(data.storage_interface);
+        if (data.storage_read_speed) parts.push(`${data.storage_read_speed}MB/s read`);
+    } else if (ct === 'Cooler') {
+        if (data.cooler_type) parts.push(data.cooler_type);
+        if (data.cooler_fan_size) parts.push(`${data.cooler_fan_size}mm fans`);
+        if (data.cooler_tdp_rating) parts.push(`${data.cooler_tdp_rating}W TDP`);
+        if (data.cooler_height) parts.push(`${data.cooler_height}mm tall`);
+    } else if (ct === 'Case') {
+        if (data.case_form_factor) parts.push(data.case_form_factor);
+        if (data.case_max_gpu_length) parts.push(`GPU: ${data.case_max_gpu_length}mm`);
+        if (data.case_max_cooler_height) parts.push(`Cooler: ${data.case_max_cooler_height}mm`);
+    } else if (ct === 'Fan') {
+        if (data.fan_size) parts.push(`${data.fan_size}mm`);
+        if (data.fan_rpm_max) parts.push(`${data.fan_rpm_max}RPM`);
+        if (data.fan_airflow) parts.push(`${data.fan_airflow}CFM`);
+    }
+    return parts;
+}
+
+// ── Status helper ─────────────────────────────────────────────────────────
+function showStatus(message, type) {
+    lookupStatus.style.display = 'block';
+    lookupMessage.className = `alert alert-${type} mb-0`;
+    lookupMessage.querySelector('span').textContent = message;
+}
+
+// ── Review Modal ──────────────────────────────────────────────────────────
+function _getSourceBadge(source) {
+    const map = {
+        database:     '<span class="badge bg-secondary ms-1">DB</span>',
+        techpowerup:  '<span class="badge bg-primary ms-1">TechPowerUp</span>',
+        amazon:       '<span class="badge bg-warning text-dark ms-1">Amazon</span>',
+        intel_ark:    '<span class="badge bg-info ms-1">Intel ARK</span>',
+        amd_official: '<span class="badge bg-danger ms-1">AMD Official</span>',
+        human_review: '<span class="badge bg-success ms-1">Confirmed</span>',
+        openwebui:    '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1"><i class="bi bi-robot"></i> Open WebUI</span>',
+    };
+    return map[source] || `<span class="badge bg-secondary ms-1">${source}</span>`;
+}
+
+function showReviewModal(candidates, query, ctName) {
+    _reviewCandidates = candidates;
+    _reviewQuery = query;
+    _reviewCtName = ctName;
+    _selectedCandidate = null;
+
+    // Persist this review to the queue (fire-and-forget)
+    fetch('/review/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            query: query,
+            component_type: ctName,
+            candidates: candidates.map(c => ({
+                name: [c.manufacturer, c.model].filter(Boolean).join(' '),
+                spec_id: c.spec_id,
+                confidence: c.confidence,
+                source: c.source,
+                source_name: c.source_name,
+                spec_summary: c.spec_summary || buildSpecsPreview(c).join(' · '),
+                detail_rows: c.detail_rows || [],
+            })),
+            top_confidence: candidates.length ? (candidates[0].confidence || 0) : 0,
+        })
+    }).catch(() => {}); // silent — don't interrupt the user flow
+
+    // Update AI Import button URL using the component type NAME (not ID)
+    const aiBtn = document.getElementById('aiImportModalBtn');
+    const params = new URLSearchParams({ query: query || '', type: ctName || '' });
+    aiBtn.href = '/backup/import-specs?' + params.toString();
+
+    const body = document.getElementById('reviewModalBody');
+    const confirmBtn = document.getElementById('confirmReviewBtn');
+    confirmBtn.disabled = true;
+
+    let html = `<p class="text-muted small mb-3">No high-confidence match found for <strong>${query}</strong>.
+        Select the best candidate below, or use AI Import to generate specs from scratch.</p>
+        <div class="d-flex flex-column gap-2">`;
+
+    candidates.forEach((c, i) => {
+        const conf = c.confidence || 0;
+        const barClass = conf >= 90 ? 'bg-success' : conf >= 70 ? 'bg-warning' : 'bg-danger';
+        const preview = c.spec_summary || buildSpecsPreview(c).join(' · ') || '<em class="text-muted">No spec preview</em>';
+        const name = [c.manufacturer, c.model].filter(Boolean).join(' ') || 'Unknown';
+
+        html += `
+        <label class="candidate-card card border rounded p-0" style="cursor:pointer" data-idx="${i}">
+            <div class="card-body py-2 px-3">
+                <div class="d-flex align-items-start gap-3">
+                    <input type="radio" name="candidateSelect" value="${i}"
+                           class="form-check-input flex-shrink-0 mt-1">
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex align-items-center flex-wrap gap-1 mb-1">
+                            <strong class="text-truncate">${name}</strong>
+                            ${_getSourceBadge(c.source)}
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <div class="d-flex align-items-center gap-1">
+                                <div class="progress" style="width:80px;height:6px">
+                                    <div class="progress-bar ${barClass}" style="width:${conf}%"></div>
+                                </div>
+                                <small class="text-muted fw-semibold">${conf}%</small>
+                            </div>
+                            <small class="text-muted">${preview}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </label>`;
+    });
+
+    html += '</div>';
+    body.innerHTML = html;
+
+    // Radio / card click handlers
+    body.querySelectorAll('input[name="candidateSelect"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            _selectedCandidate = _reviewCandidates[parseInt(this.value)];
+            confirmBtn.disabled = false;
+            body.querySelectorAll('.candidate-card').forEach(card => {
+                card.classList.remove('border-primary', 'bg-primary', 'bg-opacity-10');
+            });
+            this.closest('.candidate-card').classList.add('border-primary', 'bg-primary', 'bg-opacity-10');
+        });
+    });
+    body.querySelectorAll('.candidate-card').forEach(card => {
+        card.addEventListener('click', function() {
+            this.querySelector('input[type=radio]').click();
+        });
+    });
+
+    if (!_reviewModal) _reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
+    _reviewModal.show();
+}
+
+// ── Confirm selection from review modal ───────────────────────────────────
+document.getElementById('confirmReviewBtn').addEventListener('click', async function() {
+    if (!_selectedCandidate) return;
+
+    this.disabled = true;
+    this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying...';
+
+    try {
+        const response = await fetch('/api/confirm-lookup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                spec_id: _selectedCandidate.spec_id,
+                query: _reviewQuery,
+                component_type: _reviewCtName,
+            })
+        });
+        const data = await response.json();
+        _reviewModal.hide();
+
+        if (data.found) {
+            applyLookupResult(data, false);
+        } else {
+            showStatus('⚠️ Could not apply selection. Try again or enter manually.', 'warning');
+        }
+    } catch (err) {
+        console.error('Confirm error:', err);
+        showStatus('⚠️ Error confirming selection.', 'danger');
+    } finally {
+        this.disabled = false;
+        this.innerHTML = '<i class="bi bi-check-lg"></i> Use Selected Match';
+    }
+});
+// ── eBay price prompt on submit (v3.2.0) ─────────────────────────────
+{% if ebay_enabled %}
+(function () {
+    const EBAY_ENABLED = true;
+    const ebayModal = new bootstrap.Modal(document.getElementById('ebayPromptModal'));
+    const purchasePriceInput = document.querySelector('input[name="purchase_price"]');
+
+    // State: set to true once the eBay step has been resolved (accepted/skipped/failed)
+    let ebayStepDone = false;
+    let pendingSubmitAddAnother = false;
+
+    // Wrap the existing submit listener: we need to intercept AFTER the lookup
+    // intercept runs. The lookup handler calls inventoryForm.submit() directly,
+    // so we can't catch that here. Instead we hook the native submit event which
+    // fires for both the button click path and the programmatic .submit() path.
+    //
+    // Strategy: override form.submit() so we always go through our gate.
+    const _nativeSubmit = HTMLFormElement.prototype.submit;
+    inventoryForm.addEventListener('submit', function (e) {
+        if (ebayStepDone || purchasePriceInput.value.trim() !== '') return; // nothing to do
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        pendingSubmitAddAnother = !!document.getElementById('addAnother')?.checked;
+        triggerEbayPrompt();
+    }, true); // capture phase so we run before the existing listener
+
+    function triggerEbayPrompt() {
+        // Determine display name: use the looked-up name if available, else modelInput
+        const modelName = (document.getElementById('lookedUpName')?.value.trim()
+            || document.getElementById('modelInput')?.value.trim()
+            || '').trim();
+        const mfr = document.getElementById('manufacturerInput')?.value.trim() || '';
+        const query = [mfr, modelName].filter(Boolean).join(' ');
+
+        if (!query) { finallySubmit(); return; }
+
+        // Show modal in loading state
+        document.getElementById('ebayPromptLoading').style.display = 'block';
+        document.getElementById('ebayPromptResult').style.display = 'none';
+        document.getElementById('ebayPromptError').style.display = 'none';
+        document.getElementById('ebayPromptFooter').innerHTML =
+            '<button type="button" class="btn btn-secondary btn-sm" id="ebaySkipBtn">Skip — save without price</button>';
+        document.getElementById('ebaySkipBtn').addEventListener('click', skipAndSubmit);
+        ebayModal.show();
+
+        fetch('/inventory/ebay-price-preview?q=' + encodeURIComponent(query))
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('ebayPromptLoading').style.display = 'none';
+                if (data.error) {
+                    showEbayError(data.error);
+                } else {
+                    document.getElementById('ebayPromptModel').textContent = query;
+                    document.getElementById('ebayPromptPrice').textContent = parseFloat(data.price).toFixed(2);
+                    document.getElementById('ebayPromptListings').textContent = data.listing_count;
+                    document.getElementById('ebayPromptCacheNote').textContent = data.cached
+                        ? 'cached ' + data.cached_at : 'live';
+                    document.getElementById('ebayPromptResult').style.display = 'block';
+                    document.getElementById('ebayPromptFooter').innerHTML = `
+                        <button type="button" class="btn btn-secondary btn-sm" id="ebaySkipBtn2">Skip</button>
+                        <button type="button" class="btn btn-success" id="ebayUseBtn">
+                            <i class="bi bi-check-lg"></i> Use $${parseFloat(data.price).toFixed(2)}
+                        </button>`;
+                    document.getElementById('ebaySkipBtn2').addEventListener('click', skipAndSubmit);
+                    document.getElementById('ebayUseBtn').addEventListener('click', function () {
+                        purchasePriceInput.value = parseFloat(data.price).toFixed(2);
+                        finallySubmit();
+                    });
+                }
+            })
+            .catch(() => showEbayError('Could not reach eBay pricing service'));
+    }
+
+    function showEbayError(msg) {
+        document.getElementById('ebayPromptLoading').style.display = 'none';
+        document.getElementById('ebayPromptErrorText').textContent = msg;
+        document.getElementById('ebayPromptError').style.display = 'block';
+        document.getElementById('ebayPromptFooter').innerHTML =
+            '<button type="button" class="btn btn-secondary btn-sm" id="ebaySkipErrBtn">Continue without price</button>';
+        document.getElementById('ebaySkipErrBtn').addEventListener('click', skipAndSubmit);
+    }
+
+    function skipAndSubmit() {
+        ebayModal.hide();
+        finallySubmit();
+    }
+
+    function finallySubmit() {
+        ebayStepDone = true;
+        ebayModal.hide();
+        // Small delay to let modal animation finish before form navigates away
+        setTimeout(() => _nativeSubmit.call(inventoryForm), 200);
+    }
+})();
+{% endif %}
+</script>
+{% endblock %}

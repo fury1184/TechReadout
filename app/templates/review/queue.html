@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Review Queue - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Review Queue</h1>
+        <small class="text-muted">Scrape matches below the 90% confidence threshold</small>
+    </div>
+    {% if pending_count > 0 %}
+    <span class="badge bg-warning fs-6">{{ pending_count }} pending</span>
+    {% endif %}
+</div>
+
+<!-- Status filter tabs -->
+<ul class="nav nav-tabs mb-4">
+    {% for s in ['Pending', 'Accepted', 'Skipped'] %}
+    <li class="nav-item">
+        <a class="nav-link {{ 'active' if current_status == s }}"
+           href="{{ url_for('main.review_queue', status=s) }}">
+            {{ s }}
+        </a>
+    </li>
+    {% endfor %}
+</ul>
+
+{% if reviews.items %}
+<div class="d-flex flex-column gap-3">
+    {% for review in reviews.items %}
+    <div class="card {{ 'border-warning' if review.status == 'Pending' else '' }}">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <strong class="font-monospace">{{ review.query }}</strong>
+                <span class="badge bg-secondary ms-2">{{ review.component_type }}</span>
+                {% if review.top_confidence is not none %}
+                {% set conf = review.top_confidence|int %}
+                <span class="badge ms-1 bg-{{ 'success' if conf >= 90 else 'warning' if conf >= 70 else 'danger' }}">
+                    Best: {{ conf }}%
+                </span>
+                {% endif %}
+            </div>
+            <small class="text-muted">
+                {{ review.triggered_at.strftime('%Y-%m-%d %H:%M') if review.triggered_at else '—' }}
+            </small>
+        </div>
+        <div class="card-body">
+            {% if review.candidates %}
+            <form action="{{ url_for('main.review_accept', review_id=review.id) }}" method="post">
+                <div class="d-flex flex-column gap-2 mb-3">
+                    {% for c in review.candidates %}
+                    {% set conf = (c.confidence or 0)|int %}
+                    <label class="card border rounded p-0" style="cursor:pointer">
+                        <div class="card-body py-2 px-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <input type="radio" name="spec_id" value="{{ c.spec_id or '' }}"
+                                       class="form-check-input flex-shrink-0"
+                                       {{ 'required' if loop.first }}>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <strong class="small">{{ c.name or 'Unknown' }}</strong>
+                                        {% if c.source == 'openwebui' %}
+                                        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">
+                                            <i class="bi bi-robot"></i> Open WebUI
+                                        </span>
+                                        {% elif c.source %}
+                                        <span class="badge bg-secondary">{{ c.source }}</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+                                        <div class="progress" style="width:80px;height:5px">
+                                            <div class="progress-bar bg-{{ 'success' if conf >= 90 else 'warning' if conf >= 70 else 'danger' }}"
+                                                 style="width:{{ conf }}%"></div>
+                                        </div>
+                                        <small class="text-muted">{{ conf }}% confidence</small>
+                                        {% if c.source_name %}<small class="text-muted">· {{ c.source_name }}</small>{% endif %}
+                                    </div>
+                                    {% if c.spec_summary %}
+                                    <div class="small text-muted mt-1">{{ c.spec_summary }}</div>
+                                    {% endif %}
+                                    {% if c.detail_rows %}
+                                    <details class="small text-muted mt-1">
+                                        <summary>View scraped details</summary>
+                                        <div class="mt-1">
+                                            {% for r in c.detail_rows[:8] %}
+                                            <div><strong>{{ r.label }}:</strong> {{ r.value }}</div>
+                                            {% endfor %}
+                                        </div>
+                                    </details>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% if review.status == 'Pending' %}
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-check-lg"></i> Accept Selected
+                    </button>
+                    <a href="{{ url_for('backup.import_specs') }}?query={{ review.query|urlencode }}&type={{ review.component_type|urlencode }}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-robot"></i> AI Import
+                    </a>
+                </div>
+                {% endif %}
+            </form>
+            {% else %}
+            <p class="text-muted small mb-0">No candidates were recorded for this review.</p>
+            {% endif %}
+        </div>
+        {% if review.status == 'Pending' %}
+        <div class="card-footer bg-transparent d-flex justify-content-between align-items-center">
+            <small class="text-muted">Select a candidate above and click Accept, or dismiss below.</small>
+            <form action="{{ url_for('main.review_skip', review_id=review.id) }}" method="post">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i> Skip
+                </button>
+            </form>
+        </div>
+        {% elif review.status == 'Accepted' %}
+        <div class="card-footer bg-transparent">
+            <small class="text-success">
+                <i class="bi bi-check-circle"></i> Accepted
+                {{ review.resolved_at.strftime('%Y-%m-%d') if review.resolved_at else '' }}
+                {% if review.resolved_spec %}
+                &mdash; {{ review.resolved_spec.display_name }}
+                {% endif %}
+            </small>
+        </div>
+        {% elif review.status == 'Skipped' %}
+        <div class="card-footer bg-transparent">
+            <small class="text-muted">
+                <i class="bi bi-dash-circle"></i> Skipped
+                {{ review.resolved_at.strftime('%Y-%m-%d') if review.resolved_at else '' }}
+            </small>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if reviews.pages > 1 %}
+<div class="d-flex justify-content-center mt-4">
+    <nav>
+        <ul class="pagination pagination-sm mb-0">
+            {% if reviews.has_prev %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('main.review_queue', page=reviews.prev_num, status=current_status) }}">&laquo;</a>
+            </li>
+            {% endif %}
+            {% for p in reviews.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                <li class="page-item {{ 'active' if p == reviews.page }}">
+                    <a class="page-link" href="{{ url_for('main.review_queue', page=p, status=current_status) }}">{{ p }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            {% if reviews.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="{{ url_for('main.review_queue', page=reviews.next_num, status=current_status) }}">&raquo;</a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-check-circle text-success fs-1"></i>
+        <p class="text-muted mt-3 mb-0">
+            {% if current_status == 'Pending' %}
+            No pending reviews. All scrape matches were high-confidence or have been resolved.
+            {% else %}
+            No {{ current_status|lower }} reviews.
+            {% endif %}
+        </p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

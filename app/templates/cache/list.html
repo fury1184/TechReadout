@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Lookup Cache - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Lookup Cache</h1>
+        <small class="text-muted">{{ total_count }} total entries &middot; {{ miss_count }} misses</small>
+    </div>
+    <div class="d-flex gap-2">
+        <form action="{{ url_for('main.cache_clear_misses') }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-outline-warning"
+                    onclick="return confirm('Delete all {{ miss_count }} miss entries?')"
+                    {% if miss_count == 0 %}disabled{% endif %}>
+                <i class="bi bi-x-circle"></i> Clear Misses ({{ miss_count }})
+            </button>
+        </form>
+        <form action="{{ url_for('main.cache_clear_old') }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary"
+                    onclick="return confirm('Delete all cache entries older than 30 days?')">
+                <i class="bi bi-clock-history"></i> Clear Old (&gt;30 days)
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Status</label>
+                <select name="status" class="form-select form-select-sm">
+                    <option value="">All</option>
+                    <option value="hit" {{ 'selected' if current_status == 'hit' }}>Hits only</option>
+                    <option value="miss" {{ 'selected' if current_status == 'miss' }}>Misses only</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Component Type</label>
+                <select name="type" class="form-select form-select-sm">
+                    <option value="">All types</option>
+                    {% for t in component_types %}
+                    <option value="{{ t }}" {{ 'selected' if current_type == t }}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+                <a href="{{ url_for('main.cache_list') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if entries.items %}
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Query</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Matched Spec</th>
+                    <th>Age</th>
+                    <th class="pe-3"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in entries.items %}
+                {% set age_days = ((now - entry.updated_at).total_seconds() / 86400)|int %}
+                <tr>
+                    <td class="ps-3">
+                        <span class="font-monospace small">{{ entry.query }}</span>
+                    </td>
+                    <td><span class="badge bg-secondary">{{ entry.component_type }}</span></td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if entry.status == 'hit' else 'danger' }}">
+                            {{ entry.status }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if entry.spec %}
+                            <a href="{{ url_for('main.specs_list') }}?q={{ entry.spec.model }}"
+                               class="text-decoration-none small">
+                                {{ entry.spec.display_name }}
+                            </a>
+                        {% else %}
+                            <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="small {{ 'text-danger' if age_days > 25 else 'text-muted' }}">
+                            {{ age_days }}d ago
+                        </span>
+                    </td>
+                    <td class="pe-3 text-end">
+                        <form action="{{ url_for('main.cache_delete_entry', entry_id=entry.id) }}"
+                              method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"
+                                    title="Delete entry"
+                                    onclick="return confirm('Delete cache entry for &quot;{{ entry.query }}&quot;?')">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        {% if entries.pages > 1 %}
+        <div class="d-flex justify-content-center py-3">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if entries.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('main.cache_list', page=entries.prev_num, status=current_status, type=current_type) }}">
+                            &laquo;
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% for p in entries.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if p %}
+                        <li class="page-item {{ 'active' if p == entries.page }}">
+                            <a class="page-link" href="{{ url_for('main.cache_list', page=p, status=current_status, type=current_type) }}">{{ p }}</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if entries.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="{{ url_for('main.cache_list', page=entries.next_num, status=current_status, type=current_type) }}">
+                            &raquo;
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <p class="text-muted p-3 mb-0">No cache entries match the current filter.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

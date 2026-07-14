@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}{{ host.hostname }} - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-pc-display text-muted"></i> {{ host.hostname }}
+    </h1>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('main.hosts_edit', id=host.id) }}" class="btn btn-outline-primary">
+            <i class="bi bi-pencil"></i> Edit
+        </a>
+        <a href="{{ url_for('main.hosts_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Host Info -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Host Information</h5>
+            </div>
+            <div class="card-body">
+                <dl class="mb-0">
+                    <dt>Status</dt>
+                    <dd>
+                        <span class="badge bg-{{ 'success' if host.status == 'Active' else 'warning' if host.status == 'Planned' else 'secondary' }}">
+                            {{ host.status }}
+                        </span>
+                    </dd>
+
+                    {% if host.purpose %}
+                    <dt>Purpose</dt>
+                    <dd>{{ host.purpose }}</dd>
+                    {% endif %}
+
+                    {% if host.os %}
+                    <dt>Operating System</dt>
+                    <dd>{{ host.os }}</dd>
+                    {% endif %}
+
+                    {% if host.ip_address %}
+                    <dt>IP Address</dt>
+                    <dd><code>{{ host.ip_address }}</code></dd>
+                    {% endif %}
+
+                    {% if host.mac_address %}
+                    <dt>MAC Address</dt>
+                    <dd><code>{{ host.mac_address }}</code></dd>
+                    {% endif %}
+
+                    {% if host.description %}
+                    <dt>Description</dt>
+                    <dd>{{ host.description }}</dd>
+                    {% endif %}
+
+                    {% if build_cost %}
+                    <dt class="mt-2">Est. Build Cost</dt>
+                    <dd>
+                        <span class="fw-semibold text-success">${{ '{:,.2f}'.format(build_cost) }}</span>
+                        <br><small class="text-muted">based on components with price set</small>
+                    </dd>
+                    {% endif %}
+                </dl>
+            </div>
+            <div class="card-footer bg-transparent d-flex gap-2 flex-wrap">
+                {% if components %}
+                <form action="{{ url_for('main.hosts_part_out', id=host.id) }}" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-warning"
+                            onclick="return confirm('Part out this host? All {{ components|length }} component(s) will be returned to available inventory.')">
+                        <i class="bi bi-box-arrow-up"></i> Part Out Host
+                    </button>
+                </form>
+                {% endif %}
+                <a href="{{ url_for('main.hosts_compare') }}?a={{ host.id }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-layout-split"></i> Compare
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assigned Components -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Assigned Components</h5>
+                <span class="badge bg-primary">{{ components|length }} items</span>
+            </div>
+            <div class="card-body p-0">
+                {% if components %}
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th class="ps-3">Component</th>
+                            <th>Type</th>
+                            <th>Qty</th>
+                            <th>Condition</th>
+                            <th>Unit Price</th>
+                            <th>Cost</th>
+                            <th class="pe-3"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in components %}
+                        <tr>
+                            <td class="ps-3">
+                                <a href="{{ url_for('main.inventory_detail', id=item.id) }}" class="text-decoration-none">
+                                    {{ item.display_name }}
+                                </a>
+                            </td>
+                            <td>{{ item.component_type.name }}</td>
+                            <td>{{ item.quantity }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if item.item_condition == 'New' else 'secondary' }}">
+                                    {{ item.item_condition }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if item.purchase_price %}
+                                    ${{ '%.2f'|format(item.purchase_price) }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if item.purchase_price %}
+                                    ${{ '%.2f'|format(item.purchase_price * item.quantity) }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="pe-3">
+                                <form action="{{ url_for('main.inventory_unassign', id=item.id) }}" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Unassign"
+                                            onclick="return confirm('Remove this component from the host?')">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if build_cost %}
+                    <tfoot class="table-light fw-semibold">
+                        <tr>
+                            <td class="ps-3" colspan="5">Estimated Build Cost</td>
+                            <td class="text-success">${{ '{:,.2f}'.format(build_cost) }}</td>
+                            <td class="pe-3"></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+                {% else %}
+                <div class="p-3">
+                    <p class="text-muted mb-2">No components assigned to this host.</p>
+                    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-sm btn-outline-primary">
+                        Go to Inventory to assign components
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

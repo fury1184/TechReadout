@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}Hardware Specs - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0"><i class="bi bi-database"></i> Hardware Specs Database</h1>
+    <div>
+        <span class="badge bg-primary me-2">{{ specs|length }} items</span>
+        {% if specs %}
+        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#bulkDeleteModal">
+            <i class="bi bi-trash"></i> Bulk Delete
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+{% endif %}
+{% endwith %}
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Search</label>
+                <input type="text" name="q" class="form-control" value="{{ search or '' }}" placeholder="Model or manufacturer...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Component Type</label>
+                <select name="type" class="form-select">
+                    <option value="">All Types</option>
+                    {% for ct in component_types %}
+                    <option value="{{ ct.name }}" {% if current_type == ct.name %}selected{% endif %}>
+                        {{ ct.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Manufacturer</label>
+                <select name="manufacturer" class="form-select">
+                    <option value="">All</option>
+                    {% for mfr in manufacturers %}
+                    <option value="{{ mfr }}" {% if current_manufacturer == mfr %}selected{% endif %}>
+                        {{ mfr }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-secondary">Search</button>
+                <a href="{{ url_for('main.specs_list') }}" class="btn btn-link">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Specs Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">
+                        <input type="checkbox" class="form-check-input" id="selectAll" title="Select all">
+                    </th>
+                    <th>Model</th>
+                    <th>Type</th>
+                    <th>Manufacturer</th>
+                    <th>Key Specs</th>
+                    <th>Source</th>
+                    <th style="width: 80px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for spec in specs %}
+                <tr>
+                    <td>
+                        <input type="checkbox" class="form-check-input spec-checkbox" value="{{ spec.id }}" data-name="{{ spec.model }}">
+                    </td>
+                    <td><strong>{{ spec.model }}</strong></td>
+                    <td>{{ spec.component_type.name }}</td>
+                    <td>{{ spec.manufacturer or '-' }}</td>
+                    <td>
+                        <div>{{ spec.spec_summary }}</div>
+                        {% if spec.confidence is not none %}
+                        <small class="text-muted">Confidence: {{ spec.confidence }}%</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="small">{{ spec.source_name }}</div>
+                        {% if spec.source_url %}
+                        <a href="{{ spec.source_url }}" target="_blank" class="btn btn-sm btn-outline-secondary mt-1" title="View source">
+                            <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <button type="button" class="btn btn-sm btn-outline-danger spec-delete-btn" title="Delete"
+                                data-spec-id="{{ spec.id }}" data-spec-model="{{ spec.model }}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">
+                        No hardware specs found. <a href="{{ url_for('scraper.index') }}">Run the scraper</a> to populate the database.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Bulk Delete Modal -->
+<div class="modal fade" id="bulkDeleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Bulk Delete Specs</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="{{ url_for('main.specs_bulk_delete') }}" method="post" id="bulkDeleteForm">
+                <div class="modal-body">
+                    <p>Select specs to delete using the checkboxes, then click Delete Selected.</p>
+                    <div id="selectedSpecs" class="mb-3">
+                        <span class="text-muted">No specs selected</span>
+                    </div>
+                    <input type="hidden" name="spec_ids" id="specIdsInput">
+                    
+                    <hr>
+                    <h6>Or delete by criteria:</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Delete all specs from source:</label>
+                        <select name="delete_source" class="form-select">
+                            <option value="">-- Select source --</option>
+                            <option value="amazon">Amazon</option>
+                            <option value="techpowerup">TechPowerUp</option>
+                            <option value="intel_ark">Intel ARK</option>
+                            <option value="manufacturer">Manufacturer sites</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Delete all specs of type:</label>
+                        <select name="delete_type" class="form-select">
+                            <option value="">-- Select type --</option>
+                            {% for ct in component_types %}
+                            <option value="{{ ct.id }}">{{ ct.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <hr>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="cascade_items" value="1" id="cascadeItemsCheck" checked>
+                        <label class="form-check-label" for="cascadeItemsCheck">
+                            <strong>Also delete linked inventory items</strong>
+                        </label>
+                        <div class="form-text">
+                            Specs in use by inventory will be deleted along with their items.
+                            Uncheck to skip in-use specs instead. Build plan slots referencing
+                            deleted items are kept but marked unfulfilled.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger" id="bulkDeleteBtn">
+                        <i class="bi bi-trash"></i> Delete Selected
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Select all checkbox
+document.getElementById('selectAll').addEventListener('change', function() {
+    const checkboxes = document.querySelectorAll('.spec-checkbox');
+    checkboxes.forEach(cb => cb.checked = this.checked);
+    updateSelectedDisplay();
+});
+
+// Individual checkboxes
+document.querySelectorAll('.spec-checkbox').forEach(cb => {
+    cb.addEventListener('change', updateSelectedDisplay);
+});
+
+function updateSelectedDisplay() {
+    const checked = document.querySelectorAll('.spec-checkbox:checked');
+    const display = document.getElementById('selectedSpecs');
+    const input = document.getElementById('specIdsInput');
+    const btn = document.getElementById('bulkDeleteBtn');
+    
+    if (checked.length === 0) {
+        display.innerHTML = '<span class="text-muted">No specs selected</span>';
+        input.value = '';
+        btn.textContent = 'Delete Selected';
+    } else {
+        const names = Array.from(checked).map(cb => cb.dataset.name).slice(0, 5);
+        let html = `<strong>${checked.length} spec(s) selected:</strong><br>`;
+        html += names.map(n => `• ${n}`).join('<br>');
+        if (checked.length > 5) {
+            html += `<br><em>...and ${checked.length - 5} more</em>`;
+        }
+        display.innerHTML = html;
+        input.value = Array.from(checked).map(cb => cb.value).join(',');
+        btn.textContent = `Delete ${checked.length} Selected`;
+    }
+}
+
+// Confirm bulk delete
+document.getElementById('bulkDeleteForm').addEventListener('submit', function(e) {
+    const specIds = document.getElementById('specIdsInput').value;
+    const source = this.delete_source.value;
+    const type = this.delete_type.value;
+    
+    if (!specIds && !source && !type) {
+        alert('Please select specs to delete or choose a deletion criteria.');
+        e.preventDefault();
+        return;
+    }
+    
+    let msg = 'Are you sure you want to delete ';
+    if (specIds) {
+        const count = specIds.split(',').length;
+        msg += `${count} selected spec(s)?`;
+    } else if (source) {
+        msg += `all specs from ${source}?`;
+    } else if (type) {
+        msg += `all specs of this type?`;
+    }
+    if (document.getElementById('cascadeItemsCheck').checked) {
+        msg += '\n\nLinked inventory items will be DELETED as well.';
+    } else {
+        msg += '\n\nSpecs in use by inventory items will be skipped.';
+    }
+    msg += '\n\nThis cannot be undone!';
+    
+    if (!confirm(msg)) {
+        e.preventDefault();
+    }
+});
+
+// ---- Single spec delete modal ----
+const specDeleteModalEl = document.getElementById('specDeleteModal');
+let specDeleteModal = null;  // created lazily — bootstrap bundle loads after this block
+const specDeleteForm = document.getElementById('specDeleteForm');
+const specDeleteModeInput = document.getElementById('specDeleteMode');
+
+document.querySelectorAll('.spec-delete-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+        if (!specDeleteModal) specDeleteModal = new bootstrap.Modal(specDeleteModalEl);
+        const specId = this.dataset.specId;
+        const model = this.dataset.specModel;
+
+        // Reset modal state
+        document.getElementById('specDeleteTitle').textContent = model;
+        document.getElementById('specDeleteLoading').style.display = 'block';
+        document.getElementById('specDeleteSimple').style.display = 'none';
+        document.getElementById('specDeleteLinked').style.display = 'none';
+        document.getElementById('specDeleteCascadeBtn').style.display = 'none';
+        document.getElementById('specDeleteUnlinkBtn').style.display = 'none';
+        document.getElementById('specDeleteOnlyBtn').style.display = 'none';
+        specDeleteForm.action = `/specs/${specId}/delete`;
+        specDeleteModal.show();
+
+        fetch(`/specs/${specId}/delete-info`)
+            .then(r => r.ok ? r.json() : Promise.reject())
+            .then(data => {
+                document.getElementById('specDeleteLoading').style.display = 'none';
+                if (data.inventory.length === 0) {
+                    document.getElementById('specDeleteSimple').style.display = 'block';
+                    document.getElementById('specDeleteOnlyBtn').style.display = '';
+                } else {
+                    const tbody = document.getElementById('specDeleteItemsBody');
+                    tbody.innerHTML = '';
+                    data.inventory.forEach(item => {
+                        const tr = document.createElement('tr');
+                        const host = item.assigned_host ? ` <span class="badge bg-info">${item.assigned_host}</span>` : '';
+                        tr.innerHTML = `<td>${item.name}${host}</td><td>${item.status}</td><td>${item.quantity}</td>`;
+                        tbody.appendChild(tr);
+                    });
+                    document.getElementById('specDeleteItemCount').textContent = data.inventory.length;
+                    document.getElementById('specDeleteLinked').style.display = 'block';
+                    document.getElementById('specDeleteCascadeBtn').style.display = '';
+                    document.getElementById('specDeleteUnlinkBtn').style.display = '';
+                }
+            })
+            .catch(() => {
+                document.getElementById('specDeleteLoading').textContent = 'Could not load spec details.';
+            });
+    });
+});
+
+document.getElementById('specDeleteOnlyBtn').addEventListener('click', () => { specDeleteModeInput.value = ''; specDeleteForm.submit(); });
+document.getElementById('specDeleteCascadeBtn').addEventListener('click', () => { specDeleteModeInput.value = 'cascade'; specDeleteForm.submit(); });
+document.getElementById('specDeleteUnlinkBtn').addEventListener('click', () => { specDeleteModeInput.value = 'unlink'; specDeleteForm.submit(); });
+</script>
+
+<!-- Single Spec Delete Modal -->
+<div class="modal fade" id="specDeleteModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-trash"></i> Delete Spec: <span id="specDeleteTitle"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="specDeleteLoading" class="text-muted">
+                    <div class="spinner-border spinner-border-sm me-2"></div> Checking linked inventory...
+                </div>
+                <div id="specDeleteSimple" style="display:none;">
+                    <p class="mb-0">No inventory items are linked to this spec. Delete it?</p>
+                </div>
+                <div id="specDeleteLinked" style="display:none;">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong><span id="specDeleteItemCount"></span> inventory item(s)</strong> are linked to this spec.
+                    </div>
+                    <table class="table table-sm">
+                        <thead><tr><th>Item</th><th>Status</th><th>Qty</th></tr></thead>
+                        <tbody id="specDeleteItemsBody"></tbody>
+                    </table>
+                    <p class="small text-muted mb-0">
+                        <strong>Delete All</strong> removes the spec and every item above (build plan slots referencing
+                        them are kept but marked unfulfilled). <strong>Unlink &amp; Delete Spec</strong> keeps the items
+                        but detaches them from this spec — they keep their name as a custom entry.
+                    </p>
+                </div>
+                <form id="specDeleteForm" method="post" class="d-none">
+                    <input type="hidden" name="mode" id="specDeleteMode" value="">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-warning" id="specDeleteUnlinkBtn" style="display:none;">
+                    <i class="bi bi-link-45deg"></i> Unlink &amp; Delete Spec Only
+                </button>
+                <button type="button" class="btn btn-danger" id="specDeleteCascadeBtn" style="display:none;">
+                    <i class="bi bi-trash-fill"></i> Delete Spec + Items
+                </button>
+                <button type="button" class="btn btn-danger" id="specDeleteOnlyBtn" style="display:none;">
+                    <i class="bi bi-trash"></i> Delete Spec
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

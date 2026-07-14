@@ -1,0 +1,12 @@
+[
+  { "component_type": "NIC", "manufacturer": "Intel", "model": "I225-V 2.5GbE", "nic_speed": "2.5GbE", "nic_interface": "PCIe x1", "nic_ports": 1, "msrp": 34.99 },
+  { "component_type": "NIC", "manufacturer": "Intel", "model": "I226-V 2.5GbE", "nic_speed": "2.5GbE", "nic_interface": "PCIe x1", "nic_ports": 1, "msrp": 34.99 },
+  { "component_type": "NIC", "manufacturer": "Intel", "model": "X550-T2 10GbE", "nic_speed": "10GbE", "nic_interface": "PCIe x4", "nic_ports": 2, "msrp": 299.99 },
+  { "component_type": "NIC", "manufacturer": "Intel", "model": "X710-DA2 10GbE SFP+", "nic_speed": "10GbE", "nic_interface": "PCIe x8", "nic_ports": 2, "msrp": 349.99 },
+  { "component_type": "NIC", "manufacturer": "Realtek", "model": "RTL8125B 2.5GbE", "nic_speed": "2.5GbE", "nic_interface": "PCIe x1", "nic_ports": 1, "msrp": 19.99 },
+  { "component_type": "NIC", "manufacturer": "Mellanox", "model": "ConnectX-3 10GbE SFP+", "nic_speed": "10GbE", "nic_interface": "PCIe x8", "nic_ports": 2, "msrp": 49.99 },
+  { "component_type": "NIC", "manufacturer": "Mellanox", "model": "ConnectX-4 25GbE SFP28", "nic_speed": "25GbE", "nic_interface": "PCIe x8", "nic_ports": 2, "msrp": 149.99 },
+  { "component_type": "NIC", "manufacturer": "Aquantia", "model": "AQC107 10GbE", "nic_speed": "10GbE", "nic_interface": "PCIe x4", "nic_ports": 1, "msrp": 79.99 },
+  { "component_type": "NIC", "manufacturer": "TP-Link", "model": "TX201 2.5GbE", "nic_speed": "2.5GbE", "nic_interface": "PCIe x1", "nic_ports": 1, "msrp": 24.99 },
+  { "component_type": "NIC", "manufacturer": "TP-Link", "model": "TX401 10GbE", "nic_speed": "10GbE", "nic_interface": "PCIe x4", "nic_ports": 1, "msrp": 59.99 }
+]

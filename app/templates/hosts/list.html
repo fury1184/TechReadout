@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}Hosts - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Hosts</h1>
+    <div class="d-flex gap-2">
+        <!-- Compare button: shown via JS when exactly 2 hosts are checked -->
+        <a id="compareBtn" href="#" class="btn btn-outline-info d-none">
+            <i class="bi bi-layout-split"></i> Compare Selected
+        </a>
+        <a href="{{ url_for('main.hosts_add') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Add Host
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for host in hosts %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100" id="hostCard{{ host.id }}">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <!-- Comparison checkbox -->
+                        <input type="checkbox" class="form-check-input host-compare-check flex-shrink-0"
+                               value="{{ host.id }}" title="Select for comparison">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-pc-display text-muted"></i>
+                            {{ host.hostname }}
+                        </h5>
+                    </div>
+                    <span class="badge bg-{{ 'success' if host.status == 'Active' else 'warning' if host.status == 'Planned' else 'secondary' }}">
+                        {{ host.status }}
+                    </span>
+                </div>
+
+                {% if host.purpose %}
+                <p class="card-text text-muted small">{{ host.purpose }}</p>
+                {% endif %}
+
+                <ul class="list-unstyled small mb-0">
+                    {% if host.os %}
+                    <li><strong>OS:</strong> {{ host.os }}</li>
+                    {% endif %}
+                    {% if host.ip_address %}
+                    <li><strong>IP:</strong> <code>{{ host.ip_address }}</code></li>
+                    {% endif %}
+                    <li>
+                        <strong>Components:</strong>
+                        {% set comp_count = host.components.count() %}
+                        {% if comp_count > 0 %}
+                        <span class="badge bg-primary">{{ comp_count }}</span>
+                        {% else %}
+                        <span class="text-muted">None</span>
+                        {% endif %}
+                    </li>
+                    {% if build_costs[host.id] %}
+                    <li class="mt-1">
+                        <strong>Est. Build Cost:</strong>
+                        <span class="text-success fw-semibold">${{ '{:,.2f}'.format(build_costs[host.id]) }}</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            <div class="card-footer bg-transparent d-flex gap-2">
+                <a href="{{ url_for('main.hosts_detail', id=host.id) }}" class="btn btn-sm btn-outline-primary">
+                    View Details
+                </a>
+                <a href="{{ url_for('main.hosts_edit', id=host.id) }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-pencil"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <p class="text-muted mb-3">No hosts configured yet.</p>
+                <a href="{{ url_for('main.hosts_add') }}" class="btn btn-primary">Add Your First Host</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const compareBtn = document.getElementById('compareBtn');
+    const checks = document.querySelectorAll('.host-compare-check');
+
+    function updateCompareBtn() {
+        const selected = [...checks].filter(c => c.checked).map(c => c.value);
+
+        if (selected.length === 2) {
+            compareBtn.href = "{{ url_for('main.hosts_compare') }}?a=" + selected[0] + "&b=" + selected[1];
+            compareBtn.classList.remove('d-none');
+        } else {
+            compareBtn.classList.add('d-none');
+        }
+
+        // Visual highlight on selected cards
+        checks.forEach(c => {
+            const card = document.getElementById('hostCard' + c.value);
+            if (card) {
+                card.classList.toggle('border-info', c.checked);
+                card.classList.toggle('border-2', c.checked);
+            }
+        });
+
+        // Disable unchecked boxes once 2 are selected
+        checks.forEach(c => {
+            if (!c.checked) c.disabled = selected.length >= 2;
+        });
+    }
+
+    checks.forEach(c => c.addEventListener('change', updateCompareBtn));
+})();
+</script>
+{% endblock %}

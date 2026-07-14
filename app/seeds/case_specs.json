@@ -1,0 +1,16 @@
+[
+  { "component_type": "Case", "manufacturer": "Fractal Design", "model": "Torrent", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 461, "case_max_cooler_height": 188, "msrp": 189.99 },
+  { "component_type": "Case", "manufacturer": "Fractal Design", "model": "Define 7", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 491, "case_max_cooler_height": 185, "msrp": 169.99 },
+  { "component_type": "Case", "manufacturer": "Fractal Design", "model": "Pop Air", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 405, "case_max_cooler_height": 170, "msrp": 99.99 },
+  { "component_type": "Case", "manufacturer": "Lian Li", "model": "O11 Dynamic EVO", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 420, "case_max_cooler_height": 167, "msrp": 169.99 },
+  { "component_type": "Case", "manufacturer": "Lian Li", "model": "Lancool 216", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 435, "case_max_cooler_height": 176, "msrp": 99.99 },
+  { "component_type": "Case", "manufacturer": "NZXT", "model": "H9 Elite", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 435, "case_max_cooler_height": 185, "msrp": 199.99 },
+  { "component_type": "Case", "manufacturer": "NZXT", "model": "H7 Flow", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 400, "case_max_cooler_height": 185, "msrp": 129.99 },
+  { "component_type": "Case", "manufacturer": "Corsair", "model": "4000D Airflow", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 360, "case_max_cooler_height": 170, "msrp": 104.99 },
+  { "component_type": "Case", "manufacturer": "Corsair", "model": "5000D Airflow", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 420, "case_max_cooler_height": 190, "msrp": 174.99 },
+  { "component_type": "Case", "manufacturer": "be quiet!", "model": "Pure Base 500DX", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 369, "case_max_cooler_height": 190, "msrp": 109.99 },
+  { "component_type": "Case", "manufacturer": "Phanteks", "model": "Enthoo Pro II", "case_form_factor": "EATX", "case_type": "Full Tower", "case_max_gpu_length": 503, "case_max_cooler_height": 210, "msrp": 179.99 },
+  { "component_type": "Case", "manufacturer": "Cooler Master", "model": "MasterBox TD500 Mesh V2", "case_form_factor": "ATX", "case_type": "Mid Tower", "case_max_gpu_length": 410, "case_max_cooler_height": 165, "msrp": 89.99 },
+  { "component_type": "Case", "manufacturer": "Silverstone", "model": "SG13 Mini-ITX", "case_form_factor": "Mini-ITX", "case_type": "Mini Tower", "case_max_gpu_length": 265, "case_max_cooler_height": 83, "msrp": 59.99 },
+  { "component_type": "Case", "manufacturer": "Fractal Design", "model": "Node 304 Mini-ITX", "case_form_factor": "Mini-ITX", "case_type": "Mini Tower", "case_max_gpu_length": 310, "case_max_cooler_height": 145, "msrp": 79.99 }
+]

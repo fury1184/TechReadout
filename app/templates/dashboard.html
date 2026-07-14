@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <small class="text-muted">TechReadout v3.3.3</small>
+</div>
+
+<!-- Stats Row -->
+<div class="row g-4 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card bg-primary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Hardware Specs</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_specs }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50"><i class="bi bi-database"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-success text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Inventory Items</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_inventory }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50"><i class="bi bi-box-seam"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-info text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">On-Shelf</h6>
+                        <h2 class="card-title mb-0">{{ stats.available_items }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50"><i class="bi bi-check-circle"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card bg-secondary text-white h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Hosts</h6>
+                        <h2 class="card-title mb-0">{{ stats.total_hosts }}</h2>
+                    </div>
+                    <div class="fs-1 opacity-50"><i class="bi bi-pc-display"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card text-white h-100" style="background-color: #6f42c1;">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="card-subtitle mb-2 opacity-75">Inventory Value</h6>
+                        <h2 class="card-title mb-0">
+                            {% if stats.inventory_value %}
+                                ${{ '{:,.0f}'.format(stats.inventory_value) }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </h2>
+                        <small class="opacity-75">items with price set</small>
+                    </div>
+                    <div class="fs-1 opacity-50"><i class="bi bi-currency-dollar"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <a href="{{ url_for('main.review_queue') }}" class="text-decoration-none h-100 d-block">
+            <div class="card stat-card text-white h-100 {% if stats.pending_reviews > 0 %}bg-warning{% else %}bg-dark{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-subtitle mb-2 opacity-75">Pending Reviews</h6>
+                            <h2 class="card-title mb-0">{{ stats.pending_reviews }}</h2>
+                            <small class="opacity-75">scrape matches to review</small>
+                        </div>
+                        <div class="fs-1 opacity-50"><i class="bi bi-search"></i></div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Component Distribution Chart -->
+    <div class="col-12">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Inventory by Component</h5>
+                <a href="{{ url_for('main.inventory_list') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body">
+                {% if component_counts %}
+                    <canvas id="componentChart" style="max-height: 260px;"></canvas>
+                {% else %}
+                    <p class="text-muted mb-0">No inventory items yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Additions -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">Recently Added</h5>
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-sm btn-outline-primary">All Inventory</a>
+    </div>
+    <div class="card-body p-0">
+        {% if recent_items %}
+        <table class="table table-sm table-hover mb-0">
+            <thead>
+                <tr>
+                    <th class="ps-3">Item</th>
+                    <th>Type</th>
+                    <th>Qty</th>
+                    <th>Status</th>
+                    <th>Purchase Price</th>
+                    <th class="pe-3">Added</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in recent_items %}
+                <tr>
+                    <td class="ps-3">
+                        <a href="{{ url_for('main.inventory_detail', id=item.id) }}" class="text-decoration-none">
+                            {{ item.display_name }}
+                        </a>
+                    </td>
+                    <td>{{ item.component_type.name }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if item.status == 'Verified' else 'info' if item.status == 'Unverified' else 'primary' if item.status == 'Installed' else 'warning' if item.status == 'Missing' else 'dark' if item.status == 'Sold' else 'secondary' }}">
+                            {{ item.status }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if item.purchase_price %}
+                            ${{ '%.2f'|format(item.purchase_price) }}{% if item.price_is_estimate %} <span class="badge bg-secondary" title="eBay estimate">✱</span>{% endif %}<small class="text-muted">/unit</small>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="pe-3 text-muted small">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted p-3 mb-0">No inventory items yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Quick Actions</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('main.inventory_add') }}" class="btn btn-primary">
+                <i class="bi bi-plus-lg"></i> Add Inventory Item
+            </a>
+            <a href="{{ url_for('main.hosts_add') }}" class="btn btn-outline-primary">
+                <i class="bi bi-pc-display"></i> Add Host
+            </a>
+            <a href="{{ url_for('planner.new_plan') }}" class="btn btn-outline-primary">
+                <i class="bi bi-tools"></i> New Build Plan
+            </a>
+            <a href="{{ url_for('main.inventory_export') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-download"></i> Export CSV
+            </a>
+            <a href="{{ url_for('scraper.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-cloud-download"></i> Run Scraper
+            </a>
+            <a href="{{ url_for('backup.index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-archive"></i> Backup
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if component_counts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
+        integrity="sha512-CQBWl4fJHWbryGE+Pc3UJWW1h3dK5JQKkn3ZnBqFOB2E1tK5s3+tAFKGh3bOqHFq7RlRLAz5Cqyz5i8p0v7g=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+(function () {
+    const labels = [{% for name, count in component_counts %}"{{ name }}"{% if not loop.last %},{% endif %}{% endfor %}];
+    const data   = [{% for name, count in component_counts %}{{ count }}{% if not loop.last %},{% endif %}{% endfor %}];
+
+    const palette = [
+        '#0d6efd','#198754','#0dcaf0','#6c757d','#6f42c1',
+        '#fd7e14','#dc3545','#20c997','#ffc107','#0dcaf0'
+    ];
+
+    new Chart(document.getElementById('componentChart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Items',
+                data: data,
+                backgroundColor: palette.slice(0, labels.length),
+                borderRadius: 4,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${ctx.parsed.x} item${ctx.parsed.x !== 1 ? 's' : ''}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { precision: 0 },
+                    grid: { color: 'rgba(0,0,0,0.05)' }
+                },
+                y: { grid: { display: false } }
+            }
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

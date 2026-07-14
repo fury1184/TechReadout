@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}Lookup Settings - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Lookup Settings</h1>
+    <a href="{{ url_for('scraper.index') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Spec Lookup
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            {# Re-submit the other cards' fields so they aren't wiped on this save #}
+            <input type="hidden" name="ebay_pricing_enabled" value="{{ 'on' if ebay_pricing_enabled else '' }}">
+            <input type="hidden" name="openwebui_enabled" value="{{ 'on' if openwebui_enabled else '' }}">
+            <input type="hidden" name="openwebui_api_url" value="{{ openwebui_api_url }}">
+            <input type="hidden" name="openwebui_model" value="{{ openwebui_model }}">
+            <div class="mb-4">
+                <h5>Paid fallback</h5>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="enable_scrapedo_fallback" name="enable_scrapedo_fallback" {% if enable_scrapedo_fallback %}checked{% endif %}>
+                    <label class="form-check-label" for="enable_scrapedo_fallback">Enable Scrape.Do as last-resort fallback</label>
+                </div>
+                <div class="form-text">
+                    Token status:
+                    {% if scrapedo_token_present %}
+                        <span class="text-success">present</span>
+                    {% else %}
+                        <span class="text-warning">missing</span>
+                    {% endif %}.
+                    With this off, lookups still hit the seed database and try BeautifulSoup direct on TechPowerUp before giving up to AI Import.
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h5>Paid lookup depth</h5>
+                <label for="scrapedo_lookup_depth" class="form-label">How hard should paid fallback push per lookup?</label>
+                <select class="form-select" id="scrapedo_lookup_depth" name="scrapedo_lookup_depth">
+                    <option value="conservative" {% if scrapedo_lookup_depth == 'conservative' %}selected{% endif %}>Conservative — 1 paid sequence, up to 2 Scrape.Do calls</option>
+                    <option value="normal" {% if scrapedo_lookup_depth == 'normal' %}selected{% endif %}>Normal — 1 paid sequence, up to 3 Scrape.Do calls</option>
+                    <option value="thorough" {% if scrapedo_lookup_depth == 'thorough' %}selected{% endif %}>Thorough — 2 paid sequences, up to 5 Scrape.Do calls</option>
+                </select>
+                <div class="form-text">Guardrails on paid fallbacks so one stubborn part lookup cannot munch through credits like a caffeinated raccoon.</div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-tag"></i> eBay Price Estimates</h5>
+    </div>
+    <div class="card-body">
+        <form method="post">
+            {# Re-submit the other cards' fields so they aren't wiped on this save #}
+            <input type="hidden" name="enable_scrapedo_fallback" value="{{ 'on' if enable_scrapedo_fallback else '' }}">
+            <input type="hidden" name="scrapedo_lookup_depth" value="{{ scrapedo_lookup_depth }}">
+            <input type="hidden" name="openwebui_enabled" value="{{ 'on' if openwebui_enabled else '' }}">
+            <input type="hidden" name="openwebui_api_url" value="{{ openwebui_api_url }}">
+            <input type="hidden" name="openwebui_model" value="{{ openwebui_model }}">
+            <div class="mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="ebay_pricing_enabled"
+                           name="ebay_pricing_enabled" {% if ebay_pricing_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="ebay_pricing_enabled">
+                        Enable "Fetch eBay Price" on inventory items
+                    </label>
+                </div>
+                <div class="form-text">
+                    When enabled, a <strong>Fetch eBay Price</strong> button appears on each inventory item's detail
+                    page. Results are cached for 24 hours so one item lookup only calls the API once per day.
+                </div>
+            </div>
+            <div class="mb-3">
+                <p class="mb-1 small">Credential status:</p>
+                <ul class="list-unstyled small ms-2 mb-0">
+                    <li>
+                        <code>EBAY_APP_ID</code>:
+                        {% if ebay_app_id_present %}
+                            <span class="text-success">present</span>
+                        {% else %}
+                            <span class="text-warning">missing</span>
+                        {% endif %}
+                    </li>
+                    <li>
+                        <code>EBAY_APP_SECRET</code>:
+                        {% if ebay_app_secret_present %}
+                            <span class="text-success">present</span>
+                        {% else %}
+                            <span class="text-warning">missing</span>
+                        {% endif %}
+                    </li>
+                </ul>
+                <div class="form-text mt-1">
+                    Set these in <code>docker-compose.yml</code> under the app service environment.
+                    Get credentials at <a href="https://developer.ebay.com" target="_blank" rel="noopener">developer.ebay.com</a>.
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0"><i class="bi bi-robot"></i> Open WebUI Automatic Lookup</h5>
+    </div>
+    <div class="card-body">
+        <form method="post">
+            {# Re-submit the other cards' fields so they aren't wiped on this save #}
+            <input type="hidden" name="enable_scrapedo_fallback" value="{{ 'on' if enable_scrapedo_fallback else '' }}">
+            <input type="hidden" name="scrapedo_lookup_depth" value="{{ scrapedo_lookup_depth }}">
+            <input type="hidden" name="ebay_pricing_enabled" value="{{ 'on' if ebay_pricing_enabled else '' }}">
+            <div class="mb-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="openwebui_enabled"
+                           name="openwebui_enabled" {% if openwebui_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="openwebui_enabled">
+                        Enable Open WebUI as an automatic lookup step
+                    </label>
+                </div>
+                <div class="form-text">
+                    When enabled, Open WebUI runs <strong>after Scrape.Do and before manual AI Import</strong>
+                    in the lookup chain. Open WebUI results are never auto-accepted — they always go to the
+                    <a href="{{ url_for('main.review_queue') }}">Pending Review</a> queue for a quick human check,
+                    no matter how confident the match looks.
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="openwebui_api_url" class="form-label">Open WebUI chat completions URL</label>
+                <input type="text" class="form-control" id="openwebui_api_url" name="openwebui_api_url"
+                       value="{{ openwebui_api_url }}" placeholder="http://10.0.20.51:3000/api/chat/completions">
+            </div>
+            <div class="mb-3">
+                <label for="openwebui_model" class="form-label">Model name</label>
+                <input type="text" class="form-control" id="openwebui_model" name="openwebui_model"
+                       value="{{ openwebui_model }}" placeholder="e.g. llama3.1:8b">
+            </div>
+            <div class="mb-3">
+                <p class="mb-1 small">Credential status:</p>
+                <ul class="list-unstyled small ms-2 mb-0">
+                    <li>
+                        <code>OPENWEBUI_API_TOKEN</code>:
+                        {% if openwebui_token_present %}
+                            <span class="text-success">present</span>
+                        {% else %}
+                            <span class="text-warning">missing</span>
+                        {% endif %}
+                    </li>
+                </ul>
+                <div class="form-text mt-1">
+                    Set this in <code>docker-compose.yml</code> under the app service environment.
+                    Generate it in Open WebUI under Settings → Account → API Keys.
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> Save Settings
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4 border-info">
+    <div class="card-body">
+        <h6 class="card-title"><i class="bi bi-info-circle text-info"></i> What changed in v3.5.0</h6>
+        <p class="small mb-2">The free scraper chain (FlareSolverr, Playwright TechPowerUp, Playwright Amazon, Intel ARK, AMD Official, manufacturer sites) was retired in v3.0 because Cloudflare and Amazon anti-bot measures had made every free path unreliable.</p>
+        <p class="small mb-0">Lookup chain is now: <strong>seed DB → Scrape.Do (paid) → Open WebUI (optional, self-hosted LLM) → manual AI Import</strong>. The seed database covers most common hardware out of the box, so paid and LLM lookups are rare in practice.</p>
+    </div>
+</div>
+{% endblock %}
