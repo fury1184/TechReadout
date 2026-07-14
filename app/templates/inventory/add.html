@@ -273,6 +273,11 @@
                                         <label class="form-label small">CAS Latency</label>
                                         <input type="text" name="ram_timings" class="form-control form-control-sm" placeholder="CL30">
                                     </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Modules / Sticks</label>
+                                        <input type="number" name="ram_modules" id="ramModulesInput" class="form-control form-control-sm" min="1" placeholder="2">
+                                        <small class="text-muted">Inventory quantity counts physical sticks.</small>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -413,7 +418,8 @@
                 <!-- Quantity -->
                 <div class="col-md-3">
                     <label class="form-label">Quantity</label>
-                    <input type="number" name="quantity" class="form-control" value="1" min="1">
+                    <input type="number" name="quantity" id="quantityInput" class="form-control" value="1" min="1">
+                    <small class="text-muted" id="quantityHelp">Number of physical units.</small>
                 </div>
                 
                 <!-- Purchase Price -->
@@ -558,6 +564,9 @@ const clearSpecsBtn = document.getElementById('clearSpecsBtn');
 const manualModeToggle = document.getElementById('manualModeToggle');
 const lookupGroup = document.getElementById('lookupGroup');
 const lookupOptions = document.getElementById('lookupOptions');
+const quantityInput = document.getElementById('quantityInput');
+const quantityHelp = document.getElementById('quantityHelp');
+const ramModulesInput = document.getElementById('ramModulesInput');
 
 let lookupAttempted = false;
 let manualEntryMode = false;
@@ -618,6 +627,26 @@ function showAiImport(query, ctName) {
 
 function hideAiImport() {
     aiImportSuggestion.style.display = 'none';
+}
+
+function applyRamQuantityFromModules(modules, source = 'kit') {
+    const moduleCount = parseInt(modules, 10);
+    if (!moduleCount || moduleCount <= 1) return;
+    if (_getCtName() !== 'RAM') return;
+
+    // Quantity in TechReadOut means physical items. For RAM, that means sticks.
+    // Only auto-change the default value; respect manual quantities like 4 for
+    // two 2-stick kits or loose modules entered by hand.
+    if (!quantityInput.value || parseInt(quantityInput.value, 10) === 1) {
+        quantityInput.value = moduleCount;
+    }
+    quantityHelp.textContent = `RAM ${source}: inventory quantity counts ${moduleCount} physical stick${moduleCount === 1 ? '' : 's'}.`;
+}
+
+if (ramModulesInput) {
+    ramModulesInput.addEventListener('input', function() {
+        applyRamQuantityFromModules(this.value, 'manual entry');
+    });
 }
 
 // ── Sync lookedUpName → modelInput ────────────────────────────────────────
@@ -756,6 +785,10 @@ function applyLookupResult(data, silent = false) {
         }
     }
 
+    if (data.component_type === 'RAM' && data.ram_modules) {
+        applyRamQuantityFromModules(data.ram_modules, 'kit');
+    }
+
     const parts = buildSpecsPreview(data);
     if (parts.length > 0) {
         specsInfo.textContent = parts.join(' · ');
@@ -804,7 +837,12 @@ function buildSpecsPreview(data) {
         if (data.psu_modular) parts.push(data.psu_modular);
         if (data.psu_form_factor) parts.push(data.psu_form_factor);
     } else if (ct === 'RAM') {
-        if (data.ram_size) parts.push(`${data.ram_size}GB`);
+        if (data.ram_size && data.ram_modules) {
+            const perStick = data.ram_size / data.ram_modules;
+            parts.push(`${data.ram_size}GB (${data.ram_modules}x${Number.isInteger(perStick) ? perStick : perStick.toFixed(1)}GB)`);
+        } else if (data.ram_size) {
+            parts.push(`${data.ram_size}GB`);
+        }
         if (data.ram_type) parts.push(data.ram_type);
         if (data.ram_speed) parts.push(`${data.ram_speed}MHz`);
         if (data.ram_cas_latency) parts.push(data.ram_cas_latency);

@@ -168,18 +168,23 @@ def spec_summary(spec):
 
     elif ct == 'RAM':
         size = getattr(spec, 'ram_size', None)
+        modules = getattr(spec, 'ram_modules', None)
         if size:
-            parts.append(f"{size}GB")
+            if modules:
+                try:
+                    per_module = int(size / modules) if int(size) % int(modules) == 0 else round(float(size) / float(modules), 1)
+                    parts.append(f"{size}GB ({modules}x{per_module}GB)")
+                except (TypeError, ValueError, ZeroDivisionError):
+                    parts.append(f"{size}GB")
+            else:
+                parts.append(f"{size}GB")
         ram_type = getattr(spec, 'ram_type', None)
         speed = getattr(spec, 'ram_speed', None)
         if ram_type or speed:
             parts.append(f"{ram_type or ''}-{speed}".strip('-'))
         latency = getattr(spec, 'ram_cas_latency', None)
-        modules = getattr(spec, 'ram_modules', None)
         if latency:
             parts.append(str(latency))
-        if modules:
-            parts.append(f"{modules} sticks")
 
     elif ct == 'Storage':
         capacity = getattr(spec, 'storage_capacity', None)
@@ -303,12 +308,21 @@ def detail_rows(spec, as_dict=False):
             _row('SATA Ports', getattr(spec, 'mobo_sata_ports', None)),
         ]
     elif ct == 'RAM':
+        size = getattr(spec, 'ram_size', None)
+        modules = getattr(spec, 'ram_modules', None)
+        per_module = None
+        try:
+            if size and modules:
+                per_module = int(size / modules) if int(size) % int(modules) == 0 else round(float(size) / float(modules), 1)
+        except (TypeError, ValueError, ZeroDivisionError):
+            per_module = None
         rows = [
-            _row('Capacity', getattr(spec, 'ram_size', None), ' GB'),
+            _row('Kit Capacity', size, ' GB'),
             _row('Type', getattr(spec, 'ram_type', None)),
             _row('Speed', getattr(spec, 'ram_speed', None), ' MHz'),
             _row('CAS Latency', getattr(spec, 'ram_cas_latency', None)),
-            _row('Modules', getattr(spec, 'ram_modules', None)),
+            _row('Modules / Sticks', modules),
+            _row('Per-Stick Capacity', per_module, ' GB'),
         ]
     elif ct == 'Storage':
         rows = [

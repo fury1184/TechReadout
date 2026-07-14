@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
 from app.serializers.hardware import hardware_spec_to_dict
+from app.inventory_rules import inventory_quantity
 
 bp = Blueprint('api', __name__)
 
@@ -431,11 +432,19 @@ def get_spec_detail(id):
             'bus_interface': spec.gpu_bus_interface
         })
     elif spec.component_type.name == 'RAM':
+        per_stick_size = None
+        try:
+            if spec.ram_size and spec.ram_modules:
+                per_stick_size = spec.ram_size / spec.ram_modules
+        except (TypeError, ZeroDivisionError):
+            per_stick_size = None
         data.update({
             'size': spec.ram_size,
             'type': spec.ram_type,
             'speed': spec.ram_speed,
-            'cas_latency': spec.ram_cas_latency
+            'cas_latency': spec.ram_cas_latency,
+            'modules': spec.ram_modules,
+            'per_stick_size': per_stick_size,
         })
     
     return jsonify(data)
@@ -461,13 +470,16 @@ def get_inventory():
 def add_inventory():
     """Add inventory item via API."""
     data = request.get_json()
+    spec = HardwareSpec.query.get(data.get('hardware_spec_id')) if data.get('hardware_spec_id') else None
+    ct = ComponentType.query.get(data['component_type_id'])
+    qty = inventory_quantity(data.get('quantity', 1), ct.name if ct else None, spec=spec, data=data)
     
     item = Inventory(
         hardware_spec_id=data.get('hardware_spec_id'),
         component_type_id=data['component_type_id'],
         custom_name=data.get('custom_name'),
         custom_manufacturer=data.get('custom_manufacturer'),
-        quantity=data.get('quantity', 1),
+        quantity=qty,
         purchase_price=data.get('purchase_price'),
         condition=data.get('condition', 'New'),
         location=data.get('location'),

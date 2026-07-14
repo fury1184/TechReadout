@@ -1,0 +1,14 @@
+TechReadOut 3.5.1 patch files
+Copy these files over your TechReadOut 3.5.0 folder, preserving paths.
+
+README.md
+app/inventory_rules.py
+app/routes/api.py
+app/routes/backup.py
+app/routes/main.py
+app/scrapers/lookup.py
+app/serializers/hardware.py
+app/templates/base.html
+app/templates/inventory/add.html
+app/templates/scraper/index.html
+app/templates/scraper/settings.html

@@ -5,8 +5,20 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app import db
 import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
+from app.inventory_rules import inventory_quantity
 
 bp = Blueprint('main', __name__)
+
+
+def _component_type_name(component_type_id):
+    ct = ComponentType.query.get(component_type_id) if component_type_id else None
+    return ct.name if ct else None
+
+
+def _inventory_quantity_from_form(form, component_type_id, spec=None):
+    """Calculate inventory quantity, applying RAM kit -> physical stick logic."""
+    component_type_name = _component_type_name(component_type_id)
+    return inventory_quantity(form.get('quantity'), component_type_name, spec=spec, data=form)
 
 
 @bp.route('/')
@@ -179,7 +191,7 @@ def inventory_add():
                 'gpu_memory_gb', 'gpu_memory_type', 'gpu_base_clock', 'gpu_boost_clock', 'gpu_tdp',
                 'mobo_socket', 'mobo_chipset', 'mobo_form_factor', 'mobo_memory_type', 'mobo_memory_slots', 'mobo_m2_slots',
                 'psu_wattage', 'psu_efficiency', 'psu_modular', 'psu_form_factor',
-                'ram_capacity', 'ram_type', 'ram_speed', 'ram_timings',
+                'ram_capacity', 'ram_type', 'ram_speed', 'ram_timings', 'ram_modules',
                 'storage_type', 'storage_interface', 'storage_read_speed', 'storage_write_speed',
                 'cooler_type', 'cooler_fan_size', 'cooler_height', 'cooler_tdp_rating', 'cooler_socket_support',
                 'case_form_factor', 'case_max_gpu_length', 'case_max_cooler_height',
@@ -229,6 +241,7 @@ def inventory_add():
                     ram_type=request.form.get('ram_type') or None,
                     ram_speed=int(request.form.get('ram_speed')) if request.form.get('ram_speed') else None,
                     ram_cas_latency=request.form.get('ram_timings') or None,
+                    ram_modules=int(request.form.get('ram_modules')) if request.form.get('ram_modules') else None,
                     # Storage fields
                     storage_type=request.form.get('storage_type') or None,
                     storage_interface=request.form.get('storage_interface') or None,
@@ -256,12 +269,15 @@ def inventory_add():
         # If we have a spec_id, the custom fields were populated from lookup
         # but we still save them for display purposes
         
+        selected_spec = HardwareSpec.query.get(spec_id) if spec_id else None
+        inventory_quantity = _inventory_quantity_from_form(request.form, component_type_id, spec=selected_spec)
+
         item = Inventory(
             hardware_spec_id=spec_id if spec_id else None,
             component_type_id=component_type_id,
             custom_name=custom_name or None,
             custom_manufacturer=custom_manufacturer or None,
-            quantity=int(request.form.get('quantity', 1)),
+            quantity=inventory_quantity,
             purchase_price=request.form.get('purchase_price') or None,
             item_condition=request.form.get('condition', 'New'),
             location=request.form.get('location') or None,
@@ -294,7 +310,7 @@ def inventory_add():
             ).first()
         
         if existing:
-            existing.quantity += int(request.form.get('quantity', 1))
+            existing.quantity += inventory_quantity
             flash(f'Updated quantity for existing item (now {existing.quantity})', 'success')
         else:
             db.session.add(item)

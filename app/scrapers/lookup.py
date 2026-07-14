@@ -653,7 +653,7 @@ def lookup_hardware(
     Web-scrape lookup for one hardware item. Caller (api.py) handles DB cache
     and seed lookup before this is called; this is the scraper fallback only.
 
-    Chain (v3.5.0):
+    Chain (v3.5.1):
         CPU (Intel): Seed DB [caller] → Intel ARK via Scrape.Do → TPU via Scrape.Do → Open WebUI
         CPU (AMD):   Seed DB [caller] → TPU via Scrape.Do → Open WebUI
         GPU:         Seed DB [caller] → TPU via Scrape.Do → Amazon → Open WebUI
@@ -671,7 +671,7 @@ def lookup_hardware(
     if component_type == 'auto':
         component_type = detect_component_type(query)
 
-    print(f"[Lookup] v3.5.0 chain: '{query}' as {component_type}"
+    print(f"[Lookup] v3.5.1 chain: '{query}' as {component_type}"
           + (' (LITE)' if lite_mode else ''), flush=True)
 
     if use_intel_ark or use_amd_official:

@@ -10,6 +10,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app import db
 from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan
+from app.inventory_rules import inventory_quantity
 
 bp = Blueprint('backup', __name__)
 
@@ -774,11 +775,13 @@ def import_specs_json():
                 
                 # Optionally create inventory item
                 if create_inventory:
+                    qty = inventory_quantity(1, ct.name, spec=spec, data=spec_data)
                     inventory_item = Inventory(
                         component_type_id=ct.id,
                         hardware_spec_id=spec.id,
                         custom_name=model,
                         custom_manufacturer=manufacturer,
+                        quantity=qty,
                         status='Unverified'
                     )
                     db.session.add(inventory_item)

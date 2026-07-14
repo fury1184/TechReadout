@@ -1,6 +1,6 @@
 # TechReadout
 
-**v3.5.0** — Hardware inventory and spec tracking for homelabs and IT environments.
+**v3.5.1** — Hardware inventory and spec tracking for homelabs and IT environments.
 
 TechReadout is a self-hosted Flask web application for tracking hardware inventory, managing host builds, looking up component specs from multiple sources, and analyzing your hardware library over time.
 
@@ -130,9 +130,16 @@ Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open We
 
 ## Changelog
 
+### v3.5.1
+- **RAM kit inventory quantity** — RAM specs still describe the kit, but inventory quantity now counts physical modules/sticks. Example: 16GB (2x8GB) defaults to quantity 2.
+- **Manual RAM entry** — added a Modules / Sticks field and per-stick capacity display where possible.
+- **Consistent RAM quantity rules** — add form, API-created inventory, and import-created inventory all apply the same kit-to-stick rule.
+
 ### v3.5.0
-- **Open WebUI automatic lookup** — new optional step in the lookup chain, between Scrape.Do and manual AI Import. Asks a self-hosted LLM (via Open WebUI's OpenAI-compatible endpoint) to guess specs for anything Scrape.Do misses. Results are always routed to the Pending Review queue — confidence is scored the same as any other candidate via `score_candidate()`, but capped at 89 so an Open WebUI guess can never auto-accept. Configure the endpoint URL and model in **Lookup Settings**; requires `OPENWEBUI_API_TOKEN` in the environment.
-- New `app/scrapers/openwebui.py` module; new `openwebui`-sourced badge in the Review Queue and inline review modal.
+- **Improved spec lookup** — richer scraper confidence scoring, source metadata, stricter AI/null handling, and better motherboard/RAM validation.
+- **Richer item details** — inventory, specs, and review queue now show reusable summaries and component-specific detail rows.
+- **Code cleanup** — scraper normalization, scoring, validation, and hardware serialization helpers were split into shared modules.
+- **Open WebUI automatic lookup** — optional lookup step for missing specs. Results are routed to review and capped below auto-accept.
 
 ### v3.3.0
 - **Dark mode** — theme toggle in the sidebar footer. Defaults to your OS preference on first visit; choice is saved per browser in `localStorage`. Built on Bootstrap 5.3's native `data-bs-theme` support.
