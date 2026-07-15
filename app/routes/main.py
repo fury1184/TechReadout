@@ -6,6 +6,7 @@ from app import db
 import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
 from app.inventory_rules import inventory_quantity
+from app.compatibility import check_inventory_items
 
 bp = Blueprint('main', __name__)
 
@@ -1128,7 +1129,13 @@ def hosts_detail(id):
     )
     build_cost = build_cost if build_cost > 0 else None
 
-    return render_template('hosts/detail.html', host=host, components=components, build_cost=build_cost)
+    compatibility = check_inventory_items(components)
+
+    return render_template('hosts/detail.html',
+                           host=host,
+                           components=components,
+                           build_cost=build_cost,
+                           compatibility=compatibility)
 
 
 @bp.route('/hosts/<int:id>/edit', methods=['GET', 'POST'])

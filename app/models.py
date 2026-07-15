@@ -286,6 +286,9 @@ class BuildPlanComponent(db.Model):
     quantity = db.Column(db.Integer, default=1)
     notes = db.Column(db.Text)
 
+    inventory = db.relationship('Inventory', lazy='joined')
+    component_type = db.relationship('ComponentType', lazy='joined')
+
 
 class Backup(db.Model):
     __tablename__ = 'backups'

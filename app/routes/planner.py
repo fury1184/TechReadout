@@ -10,6 +10,7 @@ from app.models import (
     BuildPlan, BuildPlanComponent
 )
 from sqlalchemy import func
+from app.compatibility import check_build_plan
 
 bp = Blueprint('planner', __name__)
 
@@ -57,12 +58,14 @@ def detail(id):
     # Get available parts analysis
     availability = check_availability(plan)
     
-    # Get assigned components
+    # Get assigned components and compatibility analysis
     assigned = BuildPlanComponent.query.filter_by(build_plan_id=id).all()
+    compatibility = check_build_plan(plan)
     
     return render_template('planner/detail.html', 
                          plan=plan, 
                          availability=availability,
+                         compatibility=compatibility,
                          assigned=assigned)
 
 
@@ -136,7 +139,10 @@ def remove_component(id, comp_id):
 def check_compatibility(id):
     """API endpoint for compatibility check."""
     plan = BuildPlan.query.get_or_404(id)
-    return jsonify(check_availability(plan))
+    return jsonify({
+        'availability': check_availability(plan),
+        'compatibility': check_build_plan(plan),
+    })
 
 
 def check_availability(plan):
@@ -170,7 +176,11 @@ def check_availability(plan):
             # Try to get capacity from spec or custom name
             capacity = 0
             if item.hardware_spec and item.hardware_spec.ram_size:
-                capacity = item.hardware_spec.ram_size * item.quantity
+                modules = item.hardware_spec.ram_modules or 0
+                if modules:
+                    capacity = (item.hardware_spec.ram_size / modules) * item.quantity
+                else:
+                    capacity = item.hardware_spec.ram_size * item.quantity
             total_ram += capacity
             results['ram']['items'].append({
                 'id': item.id,
@@ -261,7 +271,7 @@ def check_availability(plan):
         for item in mb_items:
             socket = None
             if item.hardware_spec:
-                socket = item.hardware_spec.cpu_socket
+                socket = item.hardware_spec.mobo_socket or item.hardware_spec.cpu_socket
             
             if not plan.cpu_socket or (socket and plan.cpu_socket.lower() in socket.lower()):
                 results['motherboard']['items'].append({

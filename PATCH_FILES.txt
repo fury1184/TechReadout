@@ -1,14 +1,17 @@
-TechReadOut 3.5.1 patch files
-Copy these files over your TechReadOut 3.5.0 folder, preserving paths.
+TechReadOut Step 4 patch files for TRO 3.5.2
 
-README.md
-app/inventory_rules.py
-app/routes/api.py
-app/routes/backup.py
-app/routes/main.py
-app/scrapers/lookup.py
-app/serializers/hardware.py
-app/templates/base.html
-app/templates/inventory/add.html
-app/templates/scraper/index.html
-app/templates/scraper/settings.html
+Copy/overlay these files into your TRO 3.5.1 project root to upgrade Step 4 to TRO 3.5.2.
+
+Includes:
+- app/compatibility.py
+- app/models.py
+- app/routes/main.py
+- app/routes/planner.py
+- app/templates/hosts/detail.html
+- app/templates/planner/detail.html
+- app/templates/dashboard.html
+
+Notes:
+- Adds compatibility/readiness checks for hosts and build plans.
+- Fixes dashboard version reference from TechReadout v3.3.3 to TechReadOut v3.5.2.
+- No database migration required.
