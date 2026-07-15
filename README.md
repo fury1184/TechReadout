@@ -1,6 +1,6 @@
 # TechReadout
 
-**v3.5.1** — Hardware inventory and spec tracking for homelabs and IT environments.
+**v3.5.3** — Hardware inventory and spec tracking for homelabs and IT environments.
 
 TechReadout is a self-hosted Flask web application for tracking hardware inventory, managing host builds, looking up component specs from multiple sources, and analyzing your hardware library over time.
 
@@ -129,6 +129,11 @@ Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open We
 ---
 
 ## Changelog
+
+### v3.5.3
+- **Centralized app version** — dashboard and lower-right badge now use one shared version source in `app/version.py`.
+- **Duplicate detection** — add-inventory form now warns about similar existing specs and inventory rows before saving.
+- **Duplicate matching helpers** — new conservative duplicate matcher normalizes manufacturer/model names and reports exact/likely/possible matches without auto-blocking.
 
 ### v3.5.1
 - **RAM kit inventory quantity** — RAM specs still describe the kit, but inventory quantity now counts physical modules/sticks. Example: 16GB (2x8GB) defaults to quantity 2.

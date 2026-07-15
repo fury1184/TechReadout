@@ -1,17 +1,24 @@
-TechReadOut Step 4 patch files for TRO 3.5.2
-
-Copy/overlay these files into your TRO 3.5.1 project root to upgrade Step 4 to TRO 3.5.2.
+TechReadOut 3.5.3 patch files
+Apply over TRO 3.5.2.
 
 Includes:
-- app/compatibility.py
-- app/models.py
-- app/routes/main.py
-- app/routes/planner.py
-- app/templates/hosts/detail.html
-- app/templates/planner/detail.html
-- app/templates/dashboard.html
+- Centralized version source in app/version.py
+- Dashboard and lower-right badge now use APP_VERSION / APP_DISPLAY_VERSION
+- Duplicate detection helpers in app/duplicates.py
+- New /api/duplicates endpoint
+- Add Inventory page duplicate warning panel
+- README changelog/version update
 
-Notes:
-- Adds compatibility/readiness checks for hosts and build plans.
-- Fixes dashboard version reference from TechReadout v3.3.3 to TechReadOut v3.5.2.
-- No database migration required.
+Files:
+README.md
+app/__init__.py
+app/version.py
+app/duplicates.py
+app/routes/api.py
+app/templates/base.html
+app/templates/dashboard.html
+app/templates/inventory/add.html
+app/templates/scraper/index.html
+app/templates/scraper/settings.html
+app/scrapers/lookup.py
+app/compatibility.py

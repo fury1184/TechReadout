@@ -71,6 +71,19 @@
                         </a>
                     </div>
                 </div>
+
+                <!-- Duplicate warning (populated before save) -->
+                <div class="col-12" id="duplicateWarning" style="display: none;">
+                    <div class="alert alert-warning mb-0">
+                        <div class="d-flex justify-content-between align-items-start gap-3">
+                            <div>
+                                <strong><i class="bi bi-exclamation-triangle"></i> Possible duplicate found</strong>
+                                <div class="small mt-1" id="duplicateWarningBody"></div>
+                            </div>
+                            <button type="button" class="btn-close" aria-label="Hide duplicate warning" id="hideDuplicateWarning"></button>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Specs Display (populated by lookup) -->
                 <div class="col-12" id="specsDisplay" style="display: none;">
@@ -555,6 +568,9 @@ const lookupStatus = document.getElementById('lookupStatus');
 const lookupMessage = document.getElementById('lookupMessage');
 const aiImportSuggestion = document.getElementById('aiImportSuggestion');
 const aiImportLink = document.getElementById('aiImportLink');
+const duplicateWarning = document.getElementById('duplicateWarning');
+const duplicateWarningBody = document.getElementById('duplicateWarningBody');
+const hideDuplicateWarning = document.getElementById('hideDuplicateWarning');
 const specsDisplay = document.getElementById('specsDisplay');
 const specsInfo = document.getElementById('specsInfo');
 const lookedUpName = document.getElementById('lookedUpName');
@@ -629,6 +645,79 @@ function hideAiImport() {
     aiImportSuggestion.style.display = 'none';
 }
 
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function hideDuplicates() {
+    duplicateWarning.style.display = 'none';
+    duplicateWarningBody.innerHTML = '';
+}
+
+function renderDuplicateWarning(data) {
+    const specDupes = data.specs || [];
+    const invDupes = data.inventory || [];
+    if (!data.has_duplicates || (!specDupes.length && !invDupes.length)) {
+        hideDuplicates();
+        return;
+    }
+
+    let html = '<div class="mb-1">TRO found similar existing records. You can still save this, but consider updating quantity on an existing item instead.</div>';
+    if (invDupes.length) {
+        html += '<div class="mt-2"><strong>Inventory:</strong><ul class="mb-0">';
+        invDupes.slice(0, 4).forEach(d => {
+            const meta = [d.quantity ? `Qty ${d.quantity}` : null, d.location, d.status].filter(Boolean).join(' · ');
+            html += `<li><span class="badge bg-warning text-dark me-1">${escapeHtml(d.level)}</span>${escapeHtml(d.display_name)} ${meta ? `<span class="text-muted">(${escapeHtml(meta)})</span>` : ''}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    if (specDupes.length) {
+        html += '<div class="mt-2"><strong>Hardware specs:</strong><ul class="mb-0">';
+        specDupes.slice(0, 4).forEach(d => {
+            html += `<li><span class="badge bg-secondary me-1">${escapeHtml(d.level)}</span>${escapeHtml(d.display_name)} ${d.summary ? `<span class="text-muted">— ${escapeHtml(d.summary)}</span>` : ''}</li>`;
+        });
+        html += '</ul></div>';
+    }
+    duplicateWarningBody.innerHTML = html;
+    duplicateWarning.style.display = 'block';
+}
+
+let duplicateTimer = null;
+async function checkDuplicatesNow() {
+    const model = (lookedUpName.value.trim() || modelInput.value.trim());
+    const manufacturer = manufacturerInput.value.trim();
+    const specId = hardwareSpecId.value;
+    if (!model && !specId) { hideDuplicates(); return; }
+
+    try {
+        const response = await fetch('/api/duplicates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                hardware_spec_id: specId || null,
+                component_type_id: componentType.value,
+                component_type: _getCtName(),
+                manufacturer,
+                model,
+                limit: 5,
+            })
+        });
+        if (!response.ok) return;
+        renderDuplicateWarning(await response.json());
+    } catch (err) {
+        console.warn('Duplicate check failed:', err);
+    }
+}
+
+function scheduleDuplicateCheck() {
+    clearTimeout(duplicateTimer);
+    duplicateTimer = setTimeout(checkDuplicatesNow, 350);
+}
+
+if (hideDuplicateWarning) hideDuplicateWarning.addEventListener('click', hideDuplicates);
+
 function applyRamQuantityFromModules(modules, source = 'kit') {
     const moduleCount = parseInt(modules, 10);
     if (!moduleCount || moduleCount <= 1) return;
@@ -652,6 +741,7 @@ if (ramModulesInput) {
 // ── Sync lookedUpName → modelInput ────────────────────────────────────────
 lookedUpName.addEventListener('input', function() {
     modelInput.value = lookedUpName.value;
+    scheduleDuplicateCheck();
 });
 
 // ── Clear specs button ────────────────────────────────────────────────────
@@ -683,6 +773,7 @@ componentType.addEventListener('change', function() {
     if (manualSpecsSection.style.display !== 'none') showManualSpecs(true);
     hardwareSpecId.value = '';
     specsDisplay.style.display = 'none';
+    scheduleDuplicateCheck();
 });
 
 // ── Lookup button / form submit ───────────────────────────────────────────
@@ -704,7 +795,10 @@ modelInput.addEventListener('input', function() {
     lookupAttempted = false;
     manualEntryMode = false;
     manualSpecsSection.style.display = 'none';
+    scheduleDuplicateCheck();
 });
+
+manufacturerInput.addEventListener('input', scheduleDuplicateCheck);
 
 // ── Main lookup function ──────────────────────────────────────────────────
 async function doLookup(silent = false) {

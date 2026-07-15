@@ -3,6 +3,7 @@ from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
 from app.serializers.hardware import hardware_spec_to_dict
 from app.inventory_rules import inventory_quantity
+from app.duplicates import find_duplicates
 
 bp = Blueprint('api', __name__)
 
@@ -513,6 +514,33 @@ def get_component_types():
     """Get all component types."""
     types = db.session.query(ComponentType).all()
     return jsonify([{'id': t.id, 'name': t.name} for t in types])
+
+
+@bp.route('/duplicates', methods=['POST'])
+def check_duplicates():
+    """Check for possible duplicate specs/inventory before saving an item."""
+    data = request.get_json() or {}
+    component_type_id = data.get('component_type_id')
+    try:
+        component_type_id = int(component_type_id) if component_type_id else None
+    except (TypeError, ValueError):
+        component_type_id = None
+
+    hardware_spec_id = data.get('hardware_spec_id') or data.get('spec_id')
+    try:
+        hardware_spec_id = int(hardware_spec_id) if hardware_spec_id else None
+    except (TypeError, ValueError):
+        hardware_spec_id = None
+
+    result = find_duplicates(
+        component_type_id=component_type_id,
+        component_type_name=data.get('component_type') or data.get('component_type_name'),
+        hardware_spec_id=hardware_spec_id,
+        manufacturer=data.get('manufacturer'),
+        model=data.get('model') or data.get('query'),
+        limit=int(data.get('limit') or 5),
+    )
+    return jsonify(result)
 
 
 @bp.route('/stats')

@@ -107,7 +107,7 @@ def _form_factor_rank(value: Any) -> Optional[int]:
 def _ram_capacity_for_item(item: Any) -> float:
     """Return total represented RAM capacity for an inventory row.
 
-    TRO 3.5.2 counts RAM quantity as physical sticks. If the spec describes a
+    TRO 3.5.3 counts RAM quantity as physical sticks. If the spec describes a
     kit, use per-stick capacity = ram_size / ram_modules. If module count is
     unknown, fall back to legacy behavior of ram_size * quantity.
     """

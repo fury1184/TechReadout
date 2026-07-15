@@ -22,6 +22,15 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
+    @app.context_processor
+    def inject_app_version():
+        from app.version import APP_NAME, APP_VERSION, APP_DISPLAY_VERSION
+        return {
+            'APP_NAME': APP_NAME,
+            'APP_VERSION': APP_VERSION,
+            'APP_DISPLAY_VERSION': APP_DISPLAY_VERSION,
+        }
+
     with app.app_context():
         from sqlalchemy import text
         db.session.execute(text("""
