@@ -416,6 +416,10 @@ def export_all_data():
             'ram_size': spec.ram_size,
             'ram_type': spec.ram_type,
             'ram_speed': spec.ram_speed,
+            'ram_cas_latency': spec.ram_cas_latency,
+            'ram_modules': spec.ram_modules,
+            'ram_ecc': spec.ram_ecc,
+            'ram_module_type': spec.ram_module_type,
             'source_url': spec.source_url
         })
     
@@ -523,6 +527,10 @@ def import_all_data(data):
                     ram_size=spec_data.get('ram_size'),
                     ram_type=spec_data.get('ram_type'),
                     ram_speed=spec_data.get('ram_speed'),
+                    ram_cas_latency=spec_data.get('ram_cas_latency'),
+                    ram_modules=spec_data.get('ram_modules'),
+                    ram_ecc=spec_data.get('ram_ecc'),
+                    ram_module_type=spec_data.get('ram_module_type'),
                     source_url=spec_data.get('source_url')
                 )
                 db.session.add(spec)
@@ -749,6 +757,8 @@ def import_specs_json():
                     ram_speed=spec_data.get('ram_speed'),
                     ram_cas_latency=spec_data.get('ram_cas_latency'),
                     ram_modules=spec_data.get('ram_modules'),
+                    ram_ecc=spec_data.get('ram_ecc'),
+                    ram_module_type=spec_data.get('ram_module_type'),
                     # Storage fields
                     storage_capacity=spec_data.get('storage_capacity'),
                     storage_type=spec_data.get('storage_type'),

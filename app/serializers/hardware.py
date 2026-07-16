@@ -23,7 +23,7 @@ MOTHERBOARD_FIELDS = (
     'mobo_pcie_x16_slots', 'mobo_pcie_x4_slots', 'mobo_pcie_x1_slots',
     'mobo_m2_slots', 'mobo_sata_ports',
 )
-RAM_FIELDS = ('ram_size', 'ram_type', 'ram_speed', 'ram_cas_latency', 'ram_modules')
+RAM_FIELDS = ('ram_size', 'ram_type', 'ram_speed', 'ram_cas_latency', 'ram_modules', 'ram_ecc', 'ram_module_type')
 STORAGE_FIELDS = (
     'storage_capacity', 'storage_interface', 'storage_type',
     'storage_form_factor', 'storage_read_speed', 'storage_write_speed',
@@ -107,6 +107,14 @@ def _row(label, value, unit=None):
     return (label, value)
 
 
+def _yes_no_unknown(value):
+    if value is True:
+        return 'Yes'
+    if value is False:
+        return 'No'
+    return None
+
+
 def spec_summary(spec):
     """Compact component-specific summary for tables/cards."""
     ct = _component_type_name(spec)
@@ -185,6 +193,14 @@ def spec_summary(spec):
         latency = getattr(spec, 'ram_cas_latency', None)
         if latency:
             parts.append(str(latency))
+        ecc = getattr(spec, 'ram_ecc', None)
+        module_type = getattr(spec, 'ram_module_type', None)
+        if ecc is True:
+            parts.append('ECC')
+        elif ecc is False:
+            parts.append('Non-ECC')
+        if module_type:
+            parts.append(module_type)
 
     elif ct == 'Storage':
         capacity = getattr(spec, 'storage_capacity', None)
@@ -323,6 +339,8 @@ def detail_rows(spec, as_dict=False):
             _row('CAS Latency', getattr(spec, 'ram_cas_latency', None)),
             _row('Modules / Sticks', modules),
             _row('Per-Stick Capacity', per_module, ' GB'),
+            _row('ECC', _yes_no_unknown(getattr(spec, 'ram_ecc', None))),
+            _row('Module Type', getattr(spec, 'ram_module_type', None)),
         ]
     elif ct == 'Storage':
         rows = [

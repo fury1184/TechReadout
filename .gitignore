@@ -1,1 +1,158 @@
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# -------------------------
+# Virtual environments
+# -------------------------
+.venv/
+venv/
+env/
+ENV/
+
+# -------------------------
+# Environment files / secrets
+# -------------------------
 .env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+secrets/
+credentials/
+
+# -------------------------
+# Flask runtime data
+# -------------------------
+instance/
+flask_session/
+sessions/
+
+# -------------------------
+# Databases
+# -------------------------
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+
+# MariaDB / MySQL runtime data
+mysql-data/
+mariadb-data/
+db-data/
+data/mysql/
+data/mariadb/
+
+# -------------------------
+# Backups and exports
+# -------------------------
+backups/
+backup/
+exports/
+export/
+dumps/
+*.dump
+*.sql.gz
+*.backup
+*.bak
+*.tar.gz
+
+# Keep versioned SQL schema and migrations
+!migrations/
+!migrations/**
+!migrations/*.sql
+
+# -------------------------
+# User inventory/import files
+# -------------------------
+uploads/
+imports/
+temp/
+tmp/
+*.csv
+*.xlsx
+*.xls
+
+# Keep public seed specification files
+!app/seeds/
+!app/seeds/**
+!app/seeds/*.json
+!app/seeds/*.py
+
+# -------------------------
+# Logs
+# -------------------------
+logs/
+*.log
+
+# -------------------------
+# Docker runtime files
+# -------------------------
+docker-data/
+volumes/
+*.pid
+
+# Do not ignore tracked Docker configuration
+!docker-compose.yml
+!docker-compose.yaml
+!Dockerfile
+!Dockerfile.*
+
+# -------------------------
+# Editors and IDEs
+# -------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# -------------------------
+# Operating system files
+# -------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# -------------------------
+# Archives and generated releases
+# -------------------------
+*.zip
+*.7z
+*.rar
+
+# -------------------------
+# Patch and temporary development files
+# -------------------------
+*.diff
+*.patch
+PATCH_FILES.txt

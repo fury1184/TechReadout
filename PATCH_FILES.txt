@@ -1,24 +1,33 @@
-TechReadOut 3.5.3 patch files
-Apply over TRO 3.5.2.
+TechReadOut 3.5.4 patch files
+Apply over TechReadOut 3.5.3.
 
-Includes:
-- Centralized version source in app/version.py
-- Dashboard and lower-right badge now use APP_VERSION / APP_DISPLAY_VERSION
-- Duplicate detection helpers in app/duplicates.py
-- New /api/duplicates endpoint
-- Add Inventory page duplicate warning panel
-- README changelog/version update
+Purpose:
+- Add RAM ECC/non-ECC tracking.
+- Add RAM module type tracking: UDIMM/RDIMM/LRDIMM/SODIMM/etc.
+- Display RAM ECC/module type in summaries and detail rows.
+- Include ECC/module type in lookup API, manual add, AI import, export/import, and Open WebUI prompt.
+- Keep Step 6 compatibility logic out of this patch.
 
-Files:
-README.md
-app/__init__.py
-app/version.py
-app/duplicates.py
-app/routes/api.py
-app/templates/base.html
-app/templates/dashboard.html
-app/templates/inventory/add.html
-app/templates/scraper/index.html
-app/templates/scraper/settings.html
-app/scrapers/lookup.py
-app/compatibility.py
+Important migration for existing installs:
+Run this against the MariaDB database after overlaying files:
+
+  migrations/v3.5.4_ram_ecc.sql
+
+Example from the TRO folder if using the default docker-compose service names:
+
+  docker compose exec -T db mariadb -u techreadout -ptechreadout techreadout < migrations/v3.5.4_ram_ecc.sql
+
+Changed/new files:
+- README.md
+- app/version.py
+- app/models.py
+- app/routes/api.py
+- app/routes/backup.py
+- app/routes/main.py
+- app/scrapers/openwebui.py
+- app/scrapers/validation.py
+- app/serializers/hardware.py
+- app/templates/backup/import_specs.html
+- app/templates/inventory/add.html
+- migrations/init.sql
+- migrations/v3.5.4_ram_ecc.sql

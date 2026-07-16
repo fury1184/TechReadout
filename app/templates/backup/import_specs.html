@@ -211,9 +211,11 @@ Use EXACTLY this JSON format for each:`,
             ram_type: "DDR4",
             ram_speed: 3600,
             ram_cas_latency: 18,
-            ram_modules: 2
+            ram_modules: 2,
+            ram_ecc: null,
+            ram_module_type: null
         },
-        fields: "manufacturer, model, ram_size (GB total), ram_type (DDR4/DDR5), ram_speed (MHz), ram_cas_latency (CL), ram_modules (number of sticks)"
+        fields: "manufacturer, model, ram_size (GB total), ram_type (DDR4/DDR5), ram_speed (MHz), ram_cas_latency (CL), ram_modules (number of sticks), ram_ecc (true/false/null), ram_module_type (UDIMM/RDIMM/LRDIMM/SODIMM/null)"
     },
     PSU: {
         prompt: `Give me specs for these power supplies in JSON array format:

@@ -49,6 +49,8 @@ class HardwareSpec(db.Model):
     ram_speed = db.Column(db.Integer)
     ram_cas_latency = db.Column(db.String(20))
     ram_modules = db.Column(db.Integer)  # Number of sticks in kit
+    ram_ecc = db.Column(db.Boolean)  # True=ECC, False=Non-ECC, None=unknown
+    ram_module_type = db.Column(db.String(50))  # UDIMM, RDIMM, LRDIMM, SODIMM, etc.
     
     # Motherboard-specific
     mobo_socket = db.Column(db.String(50))

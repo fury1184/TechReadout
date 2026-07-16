@@ -192,7 +192,7 @@ def inventory_add():
                 'gpu_memory_gb', 'gpu_memory_type', 'gpu_base_clock', 'gpu_boost_clock', 'gpu_tdp',
                 'mobo_socket', 'mobo_chipset', 'mobo_form_factor', 'mobo_memory_type', 'mobo_memory_slots', 'mobo_m2_slots',
                 'psu_wattage', 'psu_efficiency', 'psu_modular', 'psu_form_factor',
-                'ram_capacity', 'ram_type', 'ram_speed', 'ram_timings', 'ram_modules',
+                'ram_capacity', 'ram_type', 'ram_speed', 'ram_timings', 'ram_modules', 'ram_ecc', 'ram_module_type',
                 'storage_type', 'storage_interface', 'storage_read_speed', 'storage_write_speed',
                 'cooler_type', 'cooler_fan_size', 'cooler_height', 'cooler_tdp_rating', 'cooler_socket_support',
                 'case_form_factor', 'case_max_gpu_length', 'case_max_cooler_height',
@@ -243,6 +243,8 @@ def inventory_add():
                     ram_speed=int(request.form.get('ram_speed')) if request.form.get('ram_speed') else None,
                     ram_cas_latency=request.form.get('ram_timings') or None,
                     ram_modules=int(request.form.get('ram_modules')) if request.form.get('ram_modules') else None,
+                    ram_ecc=True if request.form.get('ram_ecc') == 'true' else (False if request.form.get('ram_ecc') == 'false' else None),
+                    ram_module_type=request.form.get('ram_module_type') or None,
                     # Storage fields
                     storage_type=request.form.get('storage_type') or None,
                     storage_interface=request.form.get('storage_interface') or None,

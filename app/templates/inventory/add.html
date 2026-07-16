@@ -291,6 +291,28 @@
                                         <input type="number" name="ram_modules" id="ramModulesInput" class="form-control form-control-sm" min="1" placeholder="2">
                                         <small class="text-muted">Inventory quantity counts physical sticks.</small>
                                     </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">ECC</label>
+                                        <select name="ram_ecc" class="form-select form-select-sm">
+                                            <option value="">Unknown</option>
+                                            <option value="true">ECC</option>
+                                            <option value="false">Non-ECC</option>
+                                        </select>
+                                        <small class="text-muted">Use Unknown if not verified.</small>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Module Type</label>
+                                        <select name="ram_module_type" class="form-select form-select-sm">
+                                            <option value="">Unknown</option>
+                                            <option value="UDIMM">UDIMM</option>
+                                            <option value="RDIMM">RDIMM</option>
+                                            <option value="LRDIMM">LRDIMM</option>
+                                            <option value="SODIMM">SODIMM</option>
+                                            <option value="ECC UDIMM">ECC UDIMM</option>
+                                            <option value="ECC RDIMM">ECC RDIMM</option>
+                                            <option value="ECC LRDIMM">ECC LRDIMM</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -940,6 +962,9 @@ function buildSpecsPreview(data) {
         if (data.ram_type) parts.push(data.ram_type);
         if (data.ram_speed) parts.push(`${data.ram_speed}MHz`);
         if (data.ram_cas_latency) parts.push(data.ram_cas_latency);
+        if (data.ram_ecc === true) parts.push('ECC');
+        else if (data.ram_ecc === false) parts.push('Non-ECC');
+        if (data.ram_module_type) parts.push(data.ram_module_type);
     } else if (ct === 'Storage') {
         if (data.storage_type) parts.push(data.storage_type);
         if (data.storage_interface) parts.push(data.storage_interface);

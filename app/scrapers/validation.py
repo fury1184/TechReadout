@@ -29,7 +29,7 @@ SPEC_FIELDS_BY_TYPE: Dict[str, List[str]] = {
     ],
     'RAM': [
         'ram_size', 'ram_type', 'ram_speed', 'ram_cas_latency',
-        'ram_modules',
+        'ram_modules', 'ram_ecc', 'ram_module_type',
     ],
     'Storage': [
         'storage_capacity', 'storage_type', 'storage_interface',

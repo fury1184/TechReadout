@@ -1,5 +1,20 @@
 # TechReadout
 
+### TechReadOut 3.5.4
+
+Added:
+- RAM ECC/non-ECC tracking via `ram_ecc`.
+- RAM module type tracking via `ram_module_type` for UDIMM/RDIMM/LRDIMM/SODIMM.
+- RAM display summaries/details now include ECC and module type when known.
+- AI/scraper RAM prompts now require unknown ECC/module type values to be returned as null.
+
+Changed:
+- App version updated to 3.5.4.
+
+Migration:
+- Run `migrations/v3.5.4_ram_ecc.sql` against existing databases.
+
+
 **v3.5.3** — Hardware inventory and spec tracking for homelabs and IT environments.
 
 TechReadout is a self-hosted Flask web application for tracking hardware inventory, managing host builds, looking up component specs from multiple sources, and analyzing your hardware library over time.

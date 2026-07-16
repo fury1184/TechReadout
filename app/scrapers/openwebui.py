@@ -65,10 +65,10 @@ _SCHEMAS = {
         'example': {
             "component_type": "RAM", "manufacturer": "Corsair, G.Skill, Kingston, etc.",
             "model": "Vengeance RGB Pro 32GB", "ram_size": 32, "ram_type": "DDR4",
-            "ram_speed": 3600, "ram_cas_latency": "18", "ram_modules": 2,
+            "ram_speed": 3600, "ram_cas_latency": "18", "ram_modules": 2, "ram_ecc": None, "ram_module_type": None,
         },
         'fields': "manufacturer, model, ram_size (GB total), ram_type, ram_speed (MHz), "
-                  "ram_cas_latency, ram_modules (number of sticks)",
+                  "ram_cas_latency, ram_modules (number of sticks), ram_ecc (true/false/null), ram_module_type (UDIMM/RDIMM/LRDIMM/SODIMM/null)",
     },
     'PSU': {
         'example': {

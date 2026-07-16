@@ -61,6 +61,8 @@ def _save_scraper_result(result):
         ram_speed=result.get('ram_speed'),
         ram_cas_latency=result.get('ram_cas_latency'),
         ram_modules=result.get('ram_modules'),
+        ram_ecc=result.get('ram_ecc'),
+        ram_module_type=result.get('ram_module_type'),
         storage_capacity=result.get('storage_capacity'),
         storage_type=result.get('storage_type'),
         storage_interface=result.get('storage_interface'),
@@ -446,6 +448,8 @@ def get_spec_detail(id):
             'cas_latency': spec.ram_cas_latency,
             'modules': spec.ram_modules,
             'per_stick_size': per_stick_size,
+            'ecc': spec.ram_ecc,
+            'module_type': spec.ram_module_type,
         })
     
     return jsonify(data)
