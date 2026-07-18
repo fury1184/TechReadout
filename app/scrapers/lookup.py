@@ -990,7 +990,7 @@ def parse_techpowerup_detail(html: str, component_type: str, url: str) -> Dict:
         # Memory type
         for key in ['memory_type', 'memory']:
             if key in raw:
-                for mem_type in ['GDDR6X', 'GDDR6', 'GDDR5X', 'GDDR5', 'GDDR4', 'GDDR3', 'HBM2e', 'HBM2', 'HBM']:
+                for mem_type in ['GDDR7', 'GDDR6X', 'GDDR6', 'GDDR5X', 'GDDR5', 'GDDR4', 'GDDR3', 'HBM3', 'HBM2e', 'HBM2', 'HBM']:
                     if mem_type in raw[key].upper():
                         specs['gpu_memory_type'] = mem_type
                         break
@@ -1004,7 +1004,30 @@ def parse_techpowerup_detail(html: str, component_type: str, url: str) -> Dict:
                 if match:
                     specs['gpu_tdp'] = int(match.group(1))
                 break
-    
+
+        # Base / core clock (MHz). TPU labels this "GPU Clock" or "Base Clock".
+        for key in ['base_clock', 'gpu_clock', 'core_clock', 'base_frequency']:
+            if key in raw:
+                match = re.search(r'([\d,]+)\s*MHz', raw[key], re.I)
+                if match:
+                    specs['gpu_base_clock'] = int(match.group(1).replace(',', ''))
+                break
+
+        # Boost / game clock (MHz)
+        for key in ['boost_clock', 'game_clock', 'boost']:
+            if key in raw:
+                match = re.search(r'([\d,]+)\s*MHz', raw[key], re.I)
+                if match:
+                    specs['gpu_boost_clock'] = int(match.group(1).replace(',', ''))
+                break
+
+        # Bus interface, e.g. "PCIe 4.0 x16" (column is String(20)).
+        for key in ['bus_interface', 'interface']:
+            if key in raw:
+                match = re.search(r'(PCIe?\s*\d(?:\.\d)?\s*x\s*\d+)', raw[key], re.I)
+                specs['gpu_bus_interface'] = (match.group(1) if match else raw[key]).strip()[:20]
+                break
+
     elif component_type == 'CPU':
         # Cores
         for key in ['#_of_cores', 'cores', 'core_count', 'num_cores', 'total_cores', 'cpu_cores']:
@@ -1094,8 +1117,9 @@ def search_amazon_gpu(query: str) -> Optional[Dict]:
             return None
         
         print(f"[Lookup] Amazon GPU product: {amazon_link}")
-        
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(amazon_link)}"
+
+        # render=true so Amazon's JS-injected spec table is present in the HTML.
+        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(amazon_link)}"
         detail_response = scrapedo_get(detail_api_url, timeout=60)
         
         if detail_response.status_code in [402, 403]:
