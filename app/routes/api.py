@@ -104,6 +104,7 @@ def lookup_hardware():
     """
     import os, re
     from app.scrapers.lookup import lookup_hardware as do_lookup, score_candidate
+    from app.scrapers.validation import validate_result
 
     REVIEW_THRESHOLD = 90
     OPENWEBUI_CONFIDENCE_CAP = 89  # Open WebUI (LLM) results never auto-accept, however well they score
@@ -227,8 +228,11 @@ def lookup_hardware():
         use_amd_official=data.get('use_amd_official', False),
     )
 
-    # Auto-accept if best DB candidate clears threshold
-    if best_db_conf >= REVIEW_THRESHOLD:
+    # Auto-accept if best DB candidate clears threshold AND its model actually
+    # matches the query. Strategy 4's fuzzy recall can surface a different-but-
+    # similar part (e.g. a different Xeon SKU) that still scores high on shared
+    # generic tokens (manufacturer, "v4", etc.) — validate_result catches that.
+    if best_db_conf >= REVIEW_THRESHOLD and validate_result(query, sorted_db[0].get('model'), component_type):
         best = sorted_db[0]
         LookupCache.store_hit(cache_key, query, component_type, best['spec_id'])
         db.session.commit()
@@ -311,7 +315,7 @@ def lookup_hardware():
 
     best_conf = all_candidates[0]['confidence']
 
-    if best_conf >= REVIEW_THRESHOLD:
+    if best_conf >= REVIEW_THRESHOLD and validate_result(query, all_candidates[0].get('model'), component_type):
         best = all_candidates[0]
         LookupCache.store_hit(cache_key, query, component_type, best['spec_id'])
         db.session.commit()

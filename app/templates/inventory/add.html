@@ -1081,22 +1081,49 @@ function showReviewModal(candidates, query, ctName) {
     html += '</div>';
     body.innerHTML = html;
 
-    // Radio / card click handlers
+    // Radio / card selection handlers. Avoid calling radio.click() from the
+    // containing <label>, which can trigger the label's native click behavior
+    // a second time and leave the UI checked without updating our JS state.
+    function selectCandidate(index) {
+        const candidateIndex = Number.parseInt(index, 10);
+        if (!Number.isInteger(candidateIndex) || !_reviewCandidates[candidateIndex]) {
+            _selectedCandidate = null;
+            confirmBtn.disabled = true;
+            return;
+        }
+
+        _selectedCandidate = _reviewCandidates[candidateIndex];
+        confirmBtn.disabled = false;
+
+        body.querySelectorAll('.candidate-card').forEach(card => {
+            const isSelected = Number.parseInt(card.dataset.idx, 10) === candidateIndex;
+            card.classList.toggle('border-primary', isSelected);
+            card.classList.toggle('bg-primary', isSelected);
+            card.classList.toggle('bg-opacity-10', isSelected);
+            const radio = card.querySelector('input[name="candidateSelect"]');
+            if (radio) radio.checked = isSelected;
+        });
+    }
+
     body.querySelectorAll('input[name="candidateSelect"]').forEach(radio => {
         radio.addEventListener('change', function() {
-            _selectedCandidate = _reviewCandidates[parseInt(this.value)];
-            confirmBtn.disabled = false;
-            body.querySelectorAll('.candidate-card').forEach(card => {
-                card.classList.remove('border-primary', 'bg-primary', 'bg-opacity-10');
-            });
-            this.closest('.candidate-card').classList.add('border-primary', 'bg-primary', 'bg-opacity-10');
+            if (this.checked) selectCandidate(this.value);
         });
     });
+
     body.querySelectorAll('.candidate-card').forEach(card => {
-        card.addEventListener('click', function() {
-            this.querySelector('input[type=radio]').click();
+        card.addEventListener('click', function(event) {
+            // The browser already handles direct radio/label clicks. For clicks
+            // elsewhere on the card, select the row without synthesizing a click.
+            if (event.target.matches('input[name="candidateSelect"]')) return;
+            event.preventDefault();
+            selectCandidate(this.dataset.idx);
         });
     });
+
+    // Preselect the highest-ranked candidate so a one-result modal is usable
+    // immediately and the button/state cannot become visually out of sync.
+    if (candidates.length > 0) selectCandidate(0);
 
     if (!_reviewModal) _reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
     _reviewModal.show();
@@ -1104,7 +1131,20 @@ function showReviewModal(candidates, query, ctName) {
 
 // ── Confirm selection from review modal ───────────────────────────────────
 document.getElementById('confirmReviewBtn').addEventListener('click', async function() {
-    if (!_selectedCandidate) return;
+    // Read the checked radio as a fallback in case browser label behavior changed
+    // the visual selection before a change handler ran.
+    if (!_selectedCandidate) {
+        const checked = document.querySelector('#reviewModalBody input[name="candidateSelect"]:checked');
+        if (checked) _selectedCandidate = _reviewCandidates[Number.parseInt(checked.value, 10)];
+    }
+    if (!_selectedCandidate) {
+        showStatus('⚠️ Select a match candidate first.', 'warning');
+        return;
+    }
+    if (!_selectedCandidate.spec_id) {
+        showStatus('⚠️ This candidate has no saved spec ID. Run the lookup again.', 'warning');
+        return;
+    }
 
     this.disabled = true;
     this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying...';

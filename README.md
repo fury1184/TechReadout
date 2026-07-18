@@ -1,3 +1,9 @@
+### TechReadOut 3.5.7
+
+- Review match modal now updates selection state reliably, auto-selects the top-ranked candidate, and warns when a candidate has no saved spec ID.
+- Auto-accept now requires `validate_result()` to confirm the match, so fuzzy recall can't auto-accept a similar-but-wrong part (e.g. a different Xeon SKU).
+- Scrape.Do TechPowerUp lookups now pass `render=true` so JS-rendered spec pages resolve reliably.
+
 ### TechReadOut 3.5.5
 
 - AI JSON Import templates now request exactly one hardware item and one JSON object.

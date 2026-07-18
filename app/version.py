@@ -1,5 +1,5 @@
-"""Single source of truth for TechReadOut release information."""
+"""Single source of truth for TechReadOut app version display."""
 
 APP_NAME = "TechReadOut"
-APP_VERSION = "3.5.6"
+APP_VERSION = "3.5.7"
 APP_DISPLAY_VERSION = f"{APP_NAME} v{APP_VERSION}"

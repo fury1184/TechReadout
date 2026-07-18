@@ -826,7 +826,7 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
 
         if has_known_id:
             print(f"[Lookup] Scrape.Do direct (confirmed ID): {direct_url}", flush=True)
-            api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(direct_url)}"
+            api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(direct_url)}"
             response = scrapedo_get(api_url, timeout=60)
 
             if response.status_code in (402, 403):
@@ -847,7 +847,7 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
         search_url = get_search_url(search_query, component_type)
         print(f"[Lookup] Scrape.Do TPU search: {search_url}", flush=True)
 
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(search_url)}"
+        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(search_url)}"
         response = scrapedo_get(api_url, timeout=60)
 
         if response.status_code in (402, 403):
@@ -865,7 +865,7 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
 
         # ── Step C: fetch the detail page via Scrape.Do ───────────────────
         print(f"[Lookup] Scrape.Do detail fetch: {detail_url}", flush=True)
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(detail_url)}"
+        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(detail_url)}"
         detail_response = scrapedo_get(detail_api_url, timeout=60)
 
         if detail_response.status_code in (402, 403):

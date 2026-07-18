@@ -1,31 +1,28 @@
-TechReadOut 3.5.6 Version Hotfix
-=================================
+TechReadOut 3.5.7 — Review Match Selection Hotfix
 
-Apply over the existing TechReadOut 3.5.6 source tree.
+Apply over TechReadOut 3.5.6.
 
-Changed file:
-- app/version.py
+Changed files:
+  app/templates/inventory/add.html
+  app/routes/api.py
+  app/scrapers/lookup.py
+  app/version.py
 
-Fix:
-- Restores APP_DISPLAY_VERSION expected by app/__init__.py.
+Review modal fixes (app/templates/inventory/add.html):
+- Candidate cards now update the JavaScript selection state reliably.
+- Avoids recursive/synthetic label/radio click behavior.
+- Automatically selects the highest-ranked candidate.
+- Confirm button falls back to the checked radio selection.
+- Shows a clear warning if a candidate has no saved spec ID.
 
-Apply:
-1. Extract this archive into /opt/stacks/techreadout and allow it to overwrite app/version.py.
-2. Rebuild/recreate the application container:
+Lookup accuracy fixes:
+- app/routes/api.py: auto-accept now requires validate_result() to confirm the
+  match, so Strategy 4 fuzzy recall can no longer auto-accept a similar-but-wrong
+  part (e.g. a different Xeon SKU) on shared generic tokens.
+- app/scrapers/lookup.py: Scrape.Do TechPowerUp requests now pass render=true so
+  JS-rendered spec pages resolve reliably.
 
-   cd /opt/stacks/techreadout
-   docker compose up -d --build --force-recreate
+After copying the files into /opt/stacks/techreadout:
+  docker compose up -d --build --force-recreate
 
-Verification:
-
-   docker compose exec app python -c "from app.version import APP_NAME, APP_VERSION, APP_DISPLAY_VERSION; print(APP_DISPLAY_VERSION)"
-
-Expected output:
-
-   TechReadOut v3.5.6
-
-If the Compose service is not named app, run:
-
-   docker compose config --services
-
-and substitute the correct service name.
+Then hard refresh the browser with Ctrl+F5.
