@@ -134,7 +134,7 @@ def openwebui_enabled() -> bool:
 def _build_prompt(query: str, component_type: str) -> str:
     schema = _SCHEMAS.get(component_type, _GENERIC_SCHEMA)
     return (
-        f"Give me specs for this {component_type or 'hardware'}: {query}\n\n"
+        f"Give me specs for exactly one {component_type or 'hardware'} item: {query}\n\n"
         f"Respond with ONLY a single JSON object, no other text before or after, "
         f"using EXACTLY this format:\n"
         f"{json.dumps(schema['example'], indent=2)}\n\n"
@@ -153,9 +153,10 @@ def _extract_json(text: str) -> Optional[dict]:
     if not match:
         return None
     try:
-        return json.loads(match.group(0))
+        value = json.loads(match.group(0))
     except (json.JSONDecodeError, ValueError):
         return None
+    return value if isinstance(value, dict) else None
 
 
 def query_openwebui_llm(query: str, component_type: str) -> Optional[Dict]:

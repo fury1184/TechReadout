@@ -671,14 +671,11 @@ def import_specs_json():
     try:
         data = json.loads(specs_json)
         
-        # Handle both single object and array
-        if isinstance(data, dict):
-            specs_list = [data]
-        elif isinstance(data, list):
-            specs_list = data
-        else:
-            flash('JSON must be an object or array of objects', 'danger')
-            return redirect(url_for('backup.index'))
+        # AI JSON Import intentionally accepts one hardware item at a time.
+        if not isinstance(data, dict):
+            flash('JSON must be one object. Arrays are not accepted; import one item at a time.', 'danger')
+            return redirect(url_for('backup.import_specs'))
+        specs_list = [data]
         
         imported = 0
         skipped = 0

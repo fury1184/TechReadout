@@ -1,33 +1,31 @@
-TechReadOut 3.5.4 patch files
-Apply over TechReadOut 3.5.3.
+TechReadOut 3.5.6 Version Hotfix
+=================================
 
-Purpose:
-- Add RAM ECC/non-ECC tracking.
-- Add RAM module type tracking: UDIMM/RDIMM/LRDIMM/SODIMM/etc.
-- Display RAM ECC/module type in summaries and detail rows.
-- Include ECC/module type in lookup API, manual add, AI import, export/import, and Open WebUI prompt.
-- Keep Step 6 compatibility logic out of this patch.
+Apply over the existing TechReadOut 3.5.6 source tree.
 
-Important migration for existing installs:
-Run this against the MariaDB database after overlaying files:
-
-  migrations/v3.5.4_ram_ecc.sql
-
-Example from the TRO folder if using the default docker-compose service names:
-
-  docker compose exec -T db mariadb -u techreadout -ptechreadout techreadout < migrations/v3.5.4_ram_ecc.sql
-
-Changed/new files:
-- README.md
+Changed file:
 - app/version.py
-- app/models.py
-- app/routes/api.py
-- app/routes/backup.py
-- app/routes/main.py
-- app/scrapers/openwebui.py
-- app/scrapers/validation.py
-- app/serializers/hardware.py
-- app/templates/backup/import_specs.html
-- app/templates/inventory/add.html
-- migrations/init.sql
-- migrations/v3.5.4_ram_ecc.sql
+
+Fix:
+- Restores APP_DISPLAY_VERSION expected by app/__init__.py.
+
+Apply:
+1. Extract this archive into /opt/stacks/techreadout and allow it to overwrite app/version.py.
+2. Rebuild/recreate the application container:
+
+   cd /opt/stacks/techreadout
+   docker compose up -d --build --force-recreate
+
+Verification:
+
+   docker compose exec app python -c "from app.version import APP_NAME, APP_VERSION, APP_DISPLAY_VERSION; print(APP_DISPLAY_VERSION)"
+
+Expected output:
+
+   TechReadOut v3.5.6
+
+If the Compose service is not named app, run:
+
+   docker compose config --services
+
+and substitute the correct service name.

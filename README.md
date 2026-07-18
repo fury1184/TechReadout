@@ -1,3 +1,10 @@
+### TechReadOut 3.5.5
+
+- AI JSON Import templates now request exactly one hardware item and one JSON object.
+- JSON arrays are rejected by both browser validation and server-side import.
+- Open WebUI integration explicitly requests one item and rejects non-object responses.
+- Unknown values remain `null`; the AI/LLM must not guess.
+
 # TechReadout
 
 ### TechReadOut 3.5.4

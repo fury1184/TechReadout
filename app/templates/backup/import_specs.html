@@ -17,14 +17,14 @@
             <div class="card-body">
                 <ol>
                     <li><strong>Select component type</strong> below</li>
-                    <li><strong>Copy the AI prompt</strong> (customize the model names)</li>
+                    <li><strong>Copy the AI prompt</strong> (replace the single model placeholder)</li>
                     <li><strong>Ask Claude or ChatGPT</strong> with that prompt</li>
                     <li><strong>Paste the JSON response</strong> in the import box</li>
                     <li><strong>Click Import</strong> - done!</li>
                 </ol>
                 <div class="alert alert-info small mb-0">
                     <i class="bi bi-piggy-bank"></i> <strong>This uses ZERO API credits!</strong>
-                    Perfect for initial setup or bulk imports.
+                    Processes one hardware item at a time without API credits.
                 </div>
             </div>
         </div>
@@ -96,7 +96,7 @@
                             <input type="checkbox" class="form-check-input" name="create_inventory" id="createInventory" value="1">
                             <label class="form-check-label" for="createInventory">
                                 <strong>Also create inventory items</strong>
-                                <small class="text-muted d-block">Creates one inventory item for each spec imported</small>
+                                <small class="text-muted d-block">Creates inventory for this one imported specification</small>
                             </label>
                         </div>
                     </div>
@@ -135,12 +135,10 @@
 // JSON templates for each component type
 const templates = {
     CPU: {
-        prompt: `Give me specs for these CPUs in JSON array format:
-- [CPU MODEL 1]
-- [CPU MODEL 2]
-- [CPU MODEL 3]
+        prompt: `Give me specs for this CPU in JSON object format:
+- [CPU MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "CPU",
             manufacturer: "Intel or AMD",
@@ -155,12 +153,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, cpu_cores, cpu_threads, cpu_base_clock (GHz), cpu_boost_clock (GHz), cpu_tdp (Watts), cpu_socket"
     },
     GPU: {
-        prompt: `Give me specs for these GPUs in JSON array format:
-- [GPU MODEL 1]
-- [GPU MODEL 2]
-- [GPU MODEL 3]
+        prompt: `Give me specs for this GPU in JSON object format:
+- [GPU MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "GPU",
             manufacturer: "NVIDIA, AMD, or Intel",
@@ -174,12 +170,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, gpu_memory_size (MB), gpu_memory_type, gpu_base_clock (MHz), gpu_boost_clock (MHz), gpu_tdp (Watts)"
     },
     Motherboard: {
-        prompt: `Give me specs for these motherboards in JSON array format:
-- [MOTHERBOARD MODEL 1]
-- [MOTHERBOARD MODEL 2]
-- [MOTHERBOARD MODEL 3]
+        prompt: `Give me specs for this motherboard in JSON object format:
+- [MOTHERBOARD MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "Motherboard",
             manufacturer: "ASUS, MSI, Gigabyte, ASRock, etc.",
@@ -197,12 +191,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, mobo_socket, mobo_chipset, mobo_form_factor (ATX/mATX/ITX), mobo_memory_slots, mobo_memory_type, mobo_max_memory (GB), mobo_pcie_x16_slots, mobo_m2_slots, mobo_sata_ports"
     },
     RAM: {
-        prompt: `Give me specs for these RAM kits in JSON array format:
-- [RAM MODEL 1]
-- [RAM MODEL 2]
-- [RAM MODEL 3]
+        prompt: `Give me specs for this RAM kit in JSON object format:
+- [RAM MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "RAM",
             manufacturer: "Corsair, G.Skill, Kingston, etc.",
@@ -218,12 +210,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, ram_size (GB total), ram_type (DDR4/DDR5), ram_speed (MHz), ram_cas_latency (CL), ram_modules (number of sticks), ram_ecc (true/false/null), ram_module_type (UDIMM/RDIMM/LRDIMM/SODIMM/null)"
     },
     PSU: {
-        prompt: `Give me specs for these power supplies in JSON array format:
-- [PSU MODEL 1]
-- [PSU MODEL 2]
-- [PSU MODEL 3]
+        prompt: `Give me specs for this power supply in JSON object format:
+- [PSU MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "PSU",
             manufacturer: "Corsair, EVGA, Seasonic, etc.",
@@ -236,12 +226,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, psu_wattage, psu_efficiency (80+ Bronze/Silver/Gold/Platinum/Titanium), psu_modular (None/Semi/Full), psu_form_factor (ATX/SFX)"
     },
     Storage: {
-        prompt: `Give me specs for these storage drives in JSON array format:
-- [STORAGE MODEL 1]
-- [STORAGE MODEL 2]
-- [STORAGE MODEL 3]
+        prompt: `Give me specs for this storage drive in JSON object format:
+- [STORAGE MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "Storage",
             manufacturer: "Samsung, WD, Seagate, etc.",
@@ -256,12 +244,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, storage_capacity (GB), storage_type (NVMe SSD/SATA SSD/HDD), storage_interface, storage_form_factor, storage_read_speed (MB/s), storage_write_speed (MB/s)"
     },
     Cooler: {
-        prompt: `Give me specs for these CPU coolers in JSON array format:
-- [COOLER MODEL 1]
-- [COOLER MODEL 2]
-- [COOLER MODEL 3]
+        prompt: `Give me specs for this CPU cooler in JSON object format:
+- [COOLER MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "Cooler",
             manufacturer: "Noctua, Corsair, be quiet!, etc.",
@@ -275,12 +261,10 @@ Use EXACTLY this JSON format for each:`,
         fields: "manufacturer, model, cooler_type (Air Tower/AIO 240mm/AIO 280mm/AIO 360mm), cooler_fan_size (mm), cooler_height (mm), cooler_tdp_rating (Watts), cooler_socket_support"
     },
     Case: {
-        prompt: `Give me specs for these PC cases in JSON array format:
-- [CASE MODEL 1]
-- [CASE MODEL 2]
-- [CASE MODEL 3]
+        prompt: `Give me specs for this PC case in JSON object format:
+- [CASE MODEL]
 
-Use EXACTLY this JSON format for each:`,
+Use EXACTLY this JSON format:`,
         json: {
             component_type: "Case",
             manufacturer: "Fractal, NZXT, Lian Li, etc.",
@@ -306,12 +290,11 @@ function updateTemplates() {
     templateTypeName.textContent = type;
     
     // Build the full prompt with JSON example
-    const fullPrompt = template.prompt + '\n\n' + JSON.stringify(template.json, null, 2) + '\n\nRequired fields: ' + template.fields;
+    const fullPrompt = template.prompt + '\n\n' + JSON.stringify(template.json, null, 2) + '\n\nRequired fields: ' + template.fields + '\n\nIf a value cannot be verified, use null. Do not guess, estimate, infer, or omit unknown fields. Return only one valid JSON object. Do not return an array, comments, markdown, or explanations.';
     aiPrompt.value = fullPrompt;
     
-    // Show JSON template (array format)
-    const arrayExample = [template.json];
-    jsonTemplate.textContent = JSON.stringify(arrayExample, null, 2);
+    // Show a single JSON object template
+    jsonTemplate.textContent = JSON.stringify(template.json, null, 2);
 }
 
 function copyPrompt() {
@@ -341,15 +324,13 @@ function validateJson() {
     
     try {
         const data = JSON.parse(textarea.value);
-        const items = Array.isArray(data) ? data : [data];
-        
-        let html = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Valid JSON! Found ${items.length} item(s):</div>`;
-        html += '<ul class="list-group">';
-        items.forEach((item, i) => {
-            html += `<li class="list-group-item"><strong>${item.manufacturer || '?'} ${item.model || 'Unknown'}</strong> (${item.component_type || 'Unknown type'})</li>`;
-        });
-        html += '</ul>';
-        result.innerHTML = html;
+        if (Array.isArray(data)) {
+            throw new Error('Only one JSON object is allowed. Remove the surrounding array and import one item at a time.');
+        }
+        if (!data || typeof data !== 'object') {
+            throw new Error('JSON must be one object.');
+        }
+        result.innerHTML = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> Valid single-item JSON object: <strong>${data.manufacturer || '?'} ${data.model || 'Unknown'}</strong> (${data.component_type || 'Unknown type'})</div>`;
     } catch (e) {
         result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Invalid JSON: ${e.message}</div>`;
     }
@@ -378,7 +359,7 @@ updateTemplates();
     if (query) {
         const currentPrompt = aiPrompt.value;
         // Replace the first placeholder line with the actual query
-        const updated = currentPrompt.replace(/- \[.*?MODEL 1\]/, `- ${query}`);
+        const updated = currentPrompt.replace(/- \[.*?MODEL(?: 1)?\]/, `- ${query}`);
         aiPrompt.value = updated;
 
         // Show a prefill notice
