@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
-from app.serializers.hardware import hardware_spec_to_dict
+from app.serializers.hardware import hardware_spec_to_dict, SPEC_FIELDS
 from app.inventory_rules import inventory_quantity
 from app.duplicates import find_duplicates
 
@@ -28,68 +28,11 @@ def _save_scraper_result(result):
         model=result.get('model'),
         source_url=result.get('source_url'),
         raw_data=result.get('raw_data'),
-        cpu_socket=result.get('cpu_socket'),
-        cpu_cores=result.get('cpu_cores'),
-        cpu_threads=result.get('cpu_threads'),
-        cpu_base_clock=result.get('cpu_base_clock'),
-        cpu_boost_clock=result.get('cpu_boost_clock'),
-        cpu_tdp=result.get('cpu_tdp'),
-        cpu_architecture=result.get('cpu_architecture'),
-        gpu_memory_size=result.get('gpu_memory_size'),
-        gpu_memory_type=result.get('gpu_memory_type'),
-        gpu_base_clock=result.get('gpu_base_clock'),
-        gpu_boost_clock=result.get('gpu_boost_clock'),
-        gpu_tdp=result.get('gpu_tdp'),
-        gpu_bus_interface=result.get('gpu_bus_interface'),
-        mobo_socket=result.get('mobo_socket'),
-        mobo_chipset=result.get('mobo_chipset'),
-        mobo_form_factor=result.get('mobo_form_factor'),
-        mobo_memory_slots=result.get('mobo_memory_slots'),
-        mobo_memory_type=result.get('mobo_memory_type'),
-        mobo_max_memory=result.get('mobo_max_memory'),
-        mobo_pcie_x16_slots=result.get('mobo_pcie_x16_slots'),
-        mobo_pcie_x4_slots=result.get('mobo_pcie_x4_slots'),
-        mobo_pcie_x1_slots=result.get('mobo_pcie_x1_slots'),
-        mobo_m2_slots=result.get('mobo_m2_slots'),
-        mobo_sata_ports=result.get('mobo_sata_ports'),
-        psu_wattage=result.get('psu_wattage'),
-        psu_efficiency=result.get('psu_efficiency'),
-        psu_modular=result.get('psu_modular'),
-        psu_form_factor=result.get('psu_form_factor'),
-        ram_size=result.get('ram_size'),
-        ram_type=result.get('ram_type'),
-        ram_speed=result.get('ram_speed'),
-        ram_cas_latency=result.get('ram_cas_latency'),
-        ram_modules=result.get('ram_modules'),
-        ram_ecc=result.get('ram_ecc'),
-        ram_module_type=result.get('ram_module_type'),
-        storage_capacity=result.get('storage_capacity'),
-        storage_type=result.get('storage_type'),
-        storage_interface=result.get('storage_interface'),
-        storage_read_speed=result.get('storage_read_speed'),
-        storage_write_speed=result.get('storage_write_speed'),
-        storage_form_factor=result.get('storage_form_factor'),
-        cooler_type=result.get('cooler_type'),
-        cooler_tdp_rating=result.get('cooler_tdp_rating'),
-        cooler_height=result.get('cooler_height'),
-        cooler_fan_size=result.get('cooler_fan_size'),
-        cooler_socket_support=result.get('cooler_socket_support'),
-        case_type=result.get('case_type'),
-        case_form_factor=result.get('case_form_factor'),
-        case_max_gpu_length=result.get('case_max_gpu_length'),
-        case_max_cooler_height=result.get('case_max_cooler_height'),
-        fan_size=result.get('fan_size'),
-        fan_rpm_max=result.get('fan_rpm_max'),
-        fan_airflow=result.get('fan_airflow'),
-        fan_noise=result.get('fan_noise'),
-        fan_connector=result.get('fan_connector'),
-        nic_speed=result.get('nic_speed'),
-        nic_interface=result.get('nic_interface'),
-        nic_ports=result.get('nic_ports'),
-        sound_interface=result.get('sound_interface'),
-        sound_channels=result.get('sound_channels'),
-        sound_sample_rate=result.get('sound_sample_rate'),
     )
+    # All per-component-type spec columns are driven by the shared SPEC_FIELDS
+    # tuple so a new column only needs to be added in one place (serializers).
+    for field in SPEC_FIELDS:
+        setattr(spec, field, result.get(field))
     db.session.add(spec)
     db.session.commit()
     return spec

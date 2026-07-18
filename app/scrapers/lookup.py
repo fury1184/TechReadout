@@ -1,16 +1,25 @@
 """
-TechReadout — Hardware Lookup (v3.0 trimmed chain)
+TechReadout — Hardware Lookup (web-scraper step)
 
-The free scrape chain (FlareSolverr, Playwright TPU, Playwright Amazon,
-manufacturer sites, Intel ARK, AMD Official) was retired in v3.0 because
-Cloudflare and Amazon anti-bot measures had made every free path unreliable.
+The old free scrape chain (FlareSolverr, Playwright TPU, Playwright Amazon,
+manufacturer sites) was retired in v3.0 because Cloudflare and Amazon anti-bot
+measures had made every free path unreliable. Everything reachable now goes
+through Scrape.Do (paid), with Open WebUI (optional self-hosted LLM) as the last
+automatic step before manual AI Import.
 
-The remaining chain is intentionally short:
+This module is only the scraper fallback. The DB / seed-database lookup and the
+lookup cache run first, in the caller (app/routes/api.py); lookup_hardware() is
+invoked only when those miss. The concrete per-component-type order is documented
+on lookup_hardware() below and is, in summary:
 
-    1. Scrape.Do (paid). Last resort for everything.
+    CPU (Intel): Intel ARK via Scrape.Do → TechPowerUp via Scrape.Do → Open WebUI
+    CPU (AMD):   TechPowerUp via Scrape.Do → Open WebUI
+    GPU:         TechPowerUp via Scrape.Do → Amazon via Scrape.Do → Open WebUI
+    Other:       Amazon via Scrape.Do → Open WebUI
 
-Anything else a user types that the seed DB and these two methods cannot find
-is meant to fall through to AI Import (in routes/backup.py).
+Open WebUI results are never auto-accepted regardless of score (api.py caps their
+confidence below the auto-accept threshold). Anything the whole chain misses
+falls through to manual AI Import (in routes/backup.py).
 
 Public API (preserved for app/routes/api.py compatibility):
     lookup_hardware(query, component_type='auto', lite_mode=False,
