@@ -44,3 +44,15 @@ def inventory_quantity(entered_quantity=1, component_type_name=None, spec=None, 
     if modules and qty == 1:
         return modules
     return qty
+
+def enforce_assignment_status(item):
+    """Keep inventory status consistent with host assignment.
+
+    Any inventory row assigned to a host represents installed hardware and must
+    use the Installed status. Unassigned rows are left unchanged so workflows
+    such as Verified, Unverified, Missing, Sold, and Dead remain intact.
+    """
+    if getattr(item, 'assigned_to_host_id', None):
+        item.status = 'Installed'
+    return item
+

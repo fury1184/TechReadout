@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/routes/api.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/scrapers/lookup.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/version.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git check-ignore *)",
+      "Bash(python -c \"import pytest; print\\('pytest', pytest.__version__\\)\")",
+      "Bash(python -c \"import flask, flask_sqlalchemy, flask_migrate; print\\('flask stack OK'\\)\")",
+      "Bash(python -m pip install --quiet pytest flask flask-sqlalchemy flask-migrate)",
+      "Bash(python -c \"import pytest, flask, flask_sqlalchemy, flask_migrate; print\\('installed OK'\\)\")",
+      "Bash(python -c \"from app.scrapers import normalization, scoring, validation; from app import duplicates; print\\('all target modules import OK'\\)\")",
+      "Bash(python -m pip install --quiet beautifulsoup4 requests)",
+      "Bash(python -c ' *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/scrapers/lookup.py'\\).read\\(\\)\\); ast.parse\\(open\\('app/routes/api.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python -m pytest)",
+      "Bash(git push *)",
+      "Bash(git remote *)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/scrapers/lookup.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
+      "Bash(python -m pytest tests/test_tpu_parser.py -v)",
+      "Bash(python -m pip install --quiet lxml)",
+      "Bash(python -c \"import lxml; print\\('lxml OK'\\)\")"
+    ]
+  }
+}

@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app import db
 import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
-from app.inventory_rules import inventory_quantity
+from app.inventory_rules import inventory_quantity, enforce_assignment_status
 from app.compatibility import check_inventory_items
 
 bp = Blueprint('main', __name__)
@@ -377,6 +377,7 @@ def inventory_edit(id):
         item.notes = request.form.get('notes') or None
         item.status = request.form.get('status', 'Unverified')
         item.assigned_to_host_id = request.form.get('assigned_to_host_id') or None
+        enforce_assignment_status(item)
         
         db.session.commit()
         flash('Item updated!', 'success')
@@ -602,7 +603,7 @@ def inventory_assign(id):
         if assign_qty == item.quantity:
             # Assign entire item
             item.assigned_to_host_id = host_id
-            item.status = 'Installed'
+            enforce_assignment_status(item)
         else:
             # Split: reduce original quantity, create new assigned row
             item.quantity -= assign_qty
@@ -622,6 +623,7 @@ def inventory_assign(id):
                 status='Installed',
                 assigned_to_host_id=host_id
             )
+            enforce_assignment_status(assigned_item)
             db.session.add(assigned_item)
         
         db.session.commit()

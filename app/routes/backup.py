@@ -10,7 +10,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app import db
 from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan
-from app.inventory_rules import inventory_quantity
+from app.inventory_rules import inventory_quantity, enforce_assignment_status
 
 bp = Blueprint('backup', __name__)
 
@@ -607,6 +607,7 @@ def import_all_data(data):
             if item_data.get('sale_date'):
                 from datetime import datetime
                 item.sale_date = datetime.fromisoformat(item_data['sale_date']).date()
+            enforce_assignment_status(item)
             db.session.add(item)
     
     db.session.commit()
@@ -671,11 +672,14 @@ def import_specs_json():
     try:
         data = json.loads(specs_json)
         
-        # AI JSON Import intentionally accepts one hardware item at a time.
-        if not isinstance(data, dict):
-            flash('JSON must be one object. Arrays are not accepted; import one item at a time.', 'danger')
-            return redirect(url_for('backup.import_specs'))
-        specs_list = [data]
+        # Handle both single object and array
+        if isinstance(data, dict):
+            specs_list = [data]
+        elif isinstance(data, list):
+            specs_list = data
+        else:
+            flash('JSON must be an object or array of objects', 'danger')
+            return redirect(url_for('backup.index'))
         
         imported = 0
         skipped = 0

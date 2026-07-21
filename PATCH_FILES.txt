@@ -1,28 +1,32 @@
-TechReadOut 3.5.7 — Review Match Selection Hotfix
+TechReadOut 3.5.8 - Installed Status Synchronization Hotfix
 
-Apply over TechReadOut 3.5.6.
+Apply over TechReadOut 3.5.7.
 
 Changed files:
-  app/templates/inventory/add.html
-  app/routes/api.py
-  app/scrapers/lookup.py
-  app/version.py
+- app/version.py
+- app/inventory_rules.py
+- app/routes/main.py
+- app/routes/backup.py
 
-Review modal fixes (app/templates/inventory/add.html):
-- Candidate cards now update the JavaScript selection state reliably.
-- Avoids recursive/synthetic label/radio click behavior.
-- Automatically selects the highest-ranked candidate.
-- Confirm button falls back to the checked radio selection.
-- Shows a clear warning if a candidate has no saved spec ID.
+Fixes:
+- Assigning an inventory item to a host from the Edit Inventory page now
+  automatically sets its status to Installed.
+- The dedicated Assign to Host workflow uses the same centralized rule.
+- Imported inventory assigned to a host is normalized to Installed.
+- Unassigned inventory statuses are not changed automatically.
 
-Lookup accuracy fixes:
-- app/routes/api.py: auto-accept now requires validate_result() to confirm the
-  match, so Strategy 4 fuzzy recall can no longer auto-accept a similar-but-wrong
-  part (e.g. a different Xeon SKU) on shared generic tokens.
-- app/scrapers/lookup.py: Scrape.Do TechPowerUp requests now pass render=true so
-  JS-rendered spec pages resolve reliably.
+No database migration is required.
 
-After copying the files into /opt/stacks/techreadout:
-  docker compose up -d --build --force-recreate
+Apply:
+1. Extract this archive.
+2. Copy/overlay its files into /opt/stacks/techreadout.
+3. Rebuild and recreate the application container:
 
-Then hard refresh the browser with Ctrl+F5.
+   cd /opt/stacks/techreadout
+   docker compose up -d --build --force-recreate
+
+Verify:
+   docker compose exec app python -c "from app.version import APP_DISPLAY_VERSION; print(APP_DISPLAY_VERSION)"
+
+Expected:
+   TechReadOut v3.5.8
