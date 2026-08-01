@@ -1,32 +1,27 @@
-TechReadOut 3.5.8 - Installed Status Synchronization Hotfix
+TechReadOut 3.5.9 Patch
+========================
 
-Apply over TechReadOut 3.5.7.
+Apply over TechReadOut 3.5.8.
 
 Changed files:
 - app/version.py
-- app/inventory_rules.py
-- app/routes/main.py
-- app/routes/backup.py
+- app/routes/api.py
+- app/scrapers/scoring.py
+- app/scrapers/validation.py
+- tests/test_cpu_identity_matching.py
 
-Fixes:
-- Assigning an inventory item to a host from the Edit Inventory page now
-  automatically sets its status to Installed.
-- The dedicated Assign to Host workflow uses the same centralized rule.
-- Imported inventory assigned to a host is normalized to Installed.
-- Unassigned inventory statuses are not changed automatically.
+Changes:
+- Requires exact CPU family/model/suffix/revision identity when recognizable.
+- Rejects nearby Xeon candidates such as E5-2640 v4 for an E5-2696 v4 query.
+- Prevents fuzzy word overlap and confidence scoring from overriding CPU mismatches.
+- Sends unresolved/OEM CPU searches to AI/manual review instead of substituting a different CPU.
+- Adds regression tests for Xeon and Intel Core naming variations.
 
 No database migration is required.
 
-Apply:
-1. Extract this archive.
-2. Copy/overlay its files into /opt/stacks/techreadout.
-3. Rebuild and recreate the application container:
+After overlaying the files:
+  cd /opt/stacks/techreadout
+  docker compose up -d --build --force-recreate
 
-   cd /opt/stacks/techreadout
-   docker compose up -d --build --force-recreate
-
-Verify:
-   docker compose exec app python -c "from app.version import APP_DISPLAY_VERSION; print(APP_DISPLAY_VERSION)"
-
-Expected:
-   TechReadOut v3.5.8
+Optional verification:
+  docker compose exec app pytest -q tests/test_cpu_identity_matching.py

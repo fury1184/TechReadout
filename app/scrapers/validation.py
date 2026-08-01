@@ -140,6 +140,48 @@ def validation_status(result: dict, component_type: str) -> dict:
         'needs_review': bool(missing),
     }
 
+
+def extract_cpu_identity(text: str):
+    """Return a strict CPU identity tuple or ``None`` when no known pattern exists.
+
+    The tuple is ``(family, model_number, suffix, revision)``.  Formatting and
+    vendor words are ignored, but model numbers, suffixes, and Xeon revisions
+    must match exactly.
+    """
+    value = (text or '').lower()
+    value = re.sub(r'[–—]', '-', value)
+
+    # Intel Xeon E5-2696 v4 / E5 2696V4 / Xeon E5-2687W v4
+    match = re.search(r'\b(e[357])\s*[- ]?\s*(\d{4})([a-z]?)\s*(?:[- ]?v\s*(\d+))?\b', value)
+    if match:
+        return (match.group(1), match.group(2), match.group(3) or '', match.group(4) or '')
+
+    # Intel Core i7-9700K / i9 13900KS
+    match = re.search(r'\b(i[3579])\s*[- ]?\s*(\d{4,5})([a-z]{0,2})\b', value)
+    if match:
+        return (match.group(1), match.group(2), match.group(3) or '', '')
+
+    # AMD Ryzen 7 5800X3D / Ryzen 9 7900X
+    match = re.search(r'\b(ryzen\s*[3579])\s*[- ]?\s*(\d{4})([a-z0-9]{0,3})\b', value)
+    if match:
+        return (re.sub(r'\s+', '', match.group(1)), match.group(2), match.group(3) or '', '')
+
+    # AMD EPYC 7402P and similar.
+    match = re.search(r'\b(epyc)\s*[- ]?\s*(\d{4})([a-z]?)\b', value)
+    if match:
+        return (match.group(1), match.group(2), match.group(3) or '', '')
+
+    return None
+
+
+def cpu_models_compatible(query: str, candidate: str) -> bool:
+    """Require exact identity whenever the searched CPU has a recognizable ID."""
+    query_id = extract_cpu_identity(query)
+    candidate_id = extract_cpu_identity(candidate)
+    if query_id is None:
+        return True
+    return candidate_id is not None and query_id == candidate_id
+
 def validate_result(query: str, result_model: str, component_type: str = None) -> bool:
     """
     Validate that the result actually matches the query.
@@ -151,6 +193,10 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
     # For GPUs, use normalized query for validation since TechPowerUp has reference names
     if component_type == 'GPU':
         query = normalize_gpu_query(query)
+
+    if component_type == 'CPU' and not cpu_models_compatible(query, result_model):
+        print(f"[Lookup] Validation failed: strict CPU identity mismatch '{query}' vs '{result_model}'")
+        return False
     
     query_norm = normalize_model_name(query)
     result_norm = normalize_model_name(result_model)

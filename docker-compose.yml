@@ -30,8 +30,8 @@ services:
       - MYSQL_USER=techreadout
       - MYSQL_PASSWORD=techreadout
     volumes:
-      - mariadb_data:/var/lib/mysql
-      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./data/mariadb:/var/lib/mysql
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "3306:3306"
     healthcheck:
@@ -42,5 +42,4 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-volumes:
-  mariadb_data:
+

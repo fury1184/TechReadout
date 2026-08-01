@@ -9,7 +9,9 @@ import re
 from datetime import datetime, timezone
 from typing import Optional, Dict
 
-from app.scrapers.validation import has_minimum_specs, present_spec_fields
+from app.scrapers.validation import (
+    cpu_models_compatible, has_minimum_specs, present_spec_fields,
+)
 
 AIB_SUFFIXES = frozenset({
     'xc', 'xc gaming', 'xc black', 'xc ultra', 'sc', 'sc ultra', 'sc gaming',
@@ -77,6 +79,10 @@ def score_candidate(query: str, candidate_name: str, candidate_manufacturer: str
     """
     query_lower = (query or '').lower()
     cand_lower = (candidate_name or '').lower()
+
+    # A different CPU model is not a lower-confidence match; it is not a match.
+    if component_type == 'CPU' and not cpu_models_compatible(query, candidate_name):
+        return 0
     cand_mfg_lower = (candidate_manufacturer or '').lower()
     score = 0
 
