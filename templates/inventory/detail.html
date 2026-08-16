@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}{{ item.display_name }} - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-box-seam"></i> {{ item.display_name }}
+    </h1>
+    <div>
+        {% if item.status != 'Sold' %}
+        <a href="{{ url_for('main.inventory_edit', id=item.id) }}" class="btn btn-primary">
+            <i class="bi bi-pencil"></i> Edit
+        </a>
+        {% if item.quantity > 1 %}
+        <form action="{{ url_for('main.inventory_split', id=item.id) }}" method="post" class="d-inline">
+            <button type="submit" class="btn btn-outline-secondary"
+                    onclick="return confirm('Split {{ item.quantity }} units into {{ item.quantity }} individual rows? Each will keep the same price and specs.')">
+                <i class="bi bi-scissors"></i> Split
+            </button>
+        </form>
+        {% endif %}
+        {% endif %}
+        <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Basic Info -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0"><i class="bi bi-info-circle"></i> Item Information</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <th style="width: 40%">Component Type</th>
+                        <td>{{ item.component_type.name }}</td>
+                    </tr>
+                    <tr>
+                        <th>Manufacturer</th>
+                        <td>{{ item.custom_manufacturer or (item.hardware_spec.manufacturer if item.hardware_spec else '-') }}</td>
+                    </tr>
+                    <tr>
+                        <th>Model</th>
+                        <td>{{ item.custom_name or (item.hardware_spec.model if item.hardware_spec else '-') }}</td>
+                    </tr>
+                    <tr>
+                        <th>Quantity</th>
+                        <td>{{ item.quantity }}</td>
+                    </tr>
+                    <tr>
+                        <th>Condition</th>
+                        <td>
+                            <span class="badge bg-{{ 'success' if item.item_condition == 'New' else 'secondary' }}">
+                                {{ item.item_condition }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>
+                            <span class="badge bg-{{ 'success' if item.status == 'Verified' else 'info' if item.status == 'Unverified' else 'primary' if item.status == 'Installed' else 'warning' if item.status == 'Missing' else 'dark' if item.status == 'Sold' else 'secondary' }}">
+                                {{ item.status }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Purchase Price</th>
+                        <td>
+                            {% if item.purchase_price %}
+                                ${{ '%.2f'|format(item.purchase_price) }}
+                                {% if item.price_is_estimate %}
+                                    <span class="badge bg-secondary ms-1" title="eBay estimate">✱ est.</span>
+                                {% endif %}
+                                <small class="text-muted">/ unit</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                            {% if ebay_enabled %}
+                            <div class="mt-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="ebayFetchBtn"
+                                        onclick="fetchEbayPrice({{ item.id }})">
+                                    <i class="bi bi-tag"></i> Fetch eBay Price
+                                </button>
+                            </div>
+                            <div id="ebayResult" class="mt-2 d-none">
+                                <div class="alert alert-info py-2 px-3 mb-0 d-flex align-items-center gap-3 flex-wrap">
+                                    <span id="ebayResultText"></span>
+                                    <form method="post" action="{{ url_for('main.inventory_apply_ebay_price', id=item.id) }}"
+                                          class="d-inline">
+                                        <input type="hidden" name="price" id="ebayApplyPrice">
+                                        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                                    </form>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            onclick="document.getElementById('ebayResult').classList.add('d-none')">
+                                        Dismiss
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="ebayError" class="mt-2 d-none">
+                                <small class="text-danger" id="ebayErrorText"></small>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if item.purchase_price and item.quantity > 1 %}
+                    <tr>
+                        <th>Total Cost</th>
+                        <td class="fw-semibold">
+                            ${{ '%.2f'|format(item.purchase_price * item.quantity) }}
+                            {% if item.price_is_estimate %}
+                                <span class="badge bg-secondary ms-1" title="Based on eBay estimate">✱ est.</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th>Location</th>
+                        <td>{{ item.location or '-' }}</td>
+                    </tr>
+                    {% if item.assigned_to_host_id %}
+                    <tr>
+                        <th>Assigned To</th>
+                        <td>
+                            <a href="{{ url_for('main.hosts_detail', id=item.assigned_to_host_id) }}">
+                                <i class="bi bi-pc-display"></i> {{ item.assigned_host.hostname }}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if item.status == 'Sold' %}
+                    <tr>
+                        <th>Sale Price</th>
+                        <td>{{ '$%.2f'|format(item.sale_price) if item.sale_price else '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Sold To</th>
+                        <td>{{ item.sold_to or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <th>Sale Date</th>
+                        <td>{{ item.sale_date.strftime('%Y-%m-%d') if item.sale_date else '-' }}</td>
+                    </tr>
+                    {% if item.profit is not none %}
+                    <tr>
+                        <th>Profit/Loss</th>
+                        <td class="{{ 'text-success' if item.profit >= 0 else 'text-danger' }}">
+                            {{ '+' if item.profit >= 0 else '' }}${{ "%.2f"|format(item.profit) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% endif %}
+                    {% if item.notes %}
+                    <tr>
+                        <th>Notes</th>
+                        <td>{{ item.notes }}</td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th>Added</th>
+                        <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Specs -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h5 class="card-title mb-0"><i class="bi bi-cpu"></i> Technical Specifications</h5>
+            </div>
+            <div class="card-body">
+                {% if item.hardware_spec %}
+                    {% set spec = item.hardware_spec %}
+                    {% set ct = item.component_type.name %}
+                    
+                    {% if spec.spec_summary %}
+                    <div class="alert alert-secondary py-2 mb-3">
+                        <strong>Key Specs:</strong> {{ spec.spec_summary }}
+                    </div>
+                    {% endif %}
+
+                    <table class="table table-sm mb-0">
+                        {% if spec.detail_rows %}
+                            {% for label, value in spec.detail_rows %}
+                            <tr>
+                                <th style="width: 40%">{{ label }}</th>
+                                <td>{{ value }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr><td colspan="2" class="text-muted">No specific specs available for this component type.</td></tr>
+                        {% endif %}
+                    </table>
+                    
+                    <!-- Source info -->
+                    <hr class="my-3">
+                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                        <div class="small text-muted">
+                            <div><strong>Source:</strong> {{ spec.source_name }}</div>
+                            {% if spec.confidence is not none %}
+                            <div><strong>Confidence:</strong>
+                                <span class="badge bg-{{ 'success' if spec.confidence >= 90 else 'warning' if spec.confidence >= 70 else 'danger' }}">
+                                    {{ spec.confidence }}%
+                                </span>
+                            </div>
+                            {% endif %}
+                            {% if spec.scraped_at %}
+                            <div><strong>Scraped:</strong> {{ spec.scraped_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                            {% endif %}
+                            {% if spec.source_url %}
+                            <div><strong>URL:</strong>
+                                <a href="{{ spec.source_url }}" target="_blank" rel="noopener">
+                                    {{ spec.source_url[:60] }}{% if spec.source_url|length > 60 %}...{% endif %}
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <form action="{{ url_for('main.inventory_relookup', id=item.id) }}" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                    onclick="return confirm('Clear cached specs for this item and re-scrape on next lookup?')"
+                                    title="Clear cached spec data and re-scrape">
+                                <i class="bi bi-arrow-clockwise"></i> Re-lookup
+                            </button>
+                        </form>
+                    </div>
+                {% else %}
+                    <p class="text-muted mb-0">
+                        <i class="bi bi-info-circle"></i> No technical specifications recorded for this item.
+                    </p>
+                    <p class="mt-2 mb-0">
+                        <small>This item was added as a custom entry without spec lookup.</small>
+                    </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Raw Data (collapsible) -->
+{% if item.hardware_spec and item.hardware_spec.raw_data %}
+<div class="card mb-4">
+    <div class="card-header">
+        <a class="text-decoration-none" data-bs-toggle="collapse" href="#rawData" role="button" aria-expanded="false">
+            <i class="bi bi-code-slash"></i> Raw Scraped Data
+            <i class="bi bi-chevron-down float-end"></i>
+        </a>
+    </div>
+    <div class="collapse" id="rawData">
+        <div class="card-body">
+            <pre class="bg-body-secondary p-3 rounded mb-0" style="max-height: 400px; overflow-y: auto;"><code>{{ item.hardware_spec.raw_data | tojson(indent=2) }}</code></pre>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if ebay_enabled %}
+<script>
+function fetchEbayPrice(itemId) {
+    const btn = document.getElementById('ebayFetchBtn');
+    const resultDiv = document.getElementById('ebayResult');
+    const errorDiv = document.getElementById('ebayError');
+    resultDiv.classList.add('d-none');
+    errorDiv.classList.add('d-none');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Fetching...';
+
+    fetch(`/inventory/${itemId}/ebay-price`, {method: 'POST'})
+        .then(r => r.json().then(data => ({ok: r.ok, data})))
+        .then(({ok, data}) => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-tag"></i> Fetch eBay Price';
+            if (!ok) {
+                document.getElementById('ebayErrorText').textContent = data.error || 'Unknown error.';
+                errorDiv.classList.remove('d-none');
+                return;
+            }
+            const badge = data.cached
+                ? ` <small class="text-muted">(cached ${data.cached_at})</small>`
+                : ` <small class="text-muted">(${data.listing_count} listings)</small>`;
+            document.getElementById('ebayResultText').innerHTML =
+                `eBay estimate: <strong>$${data.price.toFixed(2)}</strong>${badge}`;
+            document.getElementById('ebayApplyPrice').value = data.price;
+            resultDiv.classList.remove('d-none');
+        })
+        .catch(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-tag"></i> Fetch eBay Price';
+            document.getElementById('ebayErrorText').textContent = 'Request failed. Check your connection.';
+            errorDiv.classList.remove('d-none');
+        });
+}
+</script>
+{% endif %}
+
+{% endblock %}

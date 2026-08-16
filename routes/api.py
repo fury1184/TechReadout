@@ -3,7 +3,7 @@ from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
 from app.serializers.hardware import hardware_spec_to_dict
 from app.inventory_rules import inventory_quantity
-from app.duplicates import find_duplicates, compact_duplicate_key
+from app.duplicates import find_duplicates
 
 bp = Blueprint('api', __name__)
 
@@ -104,7 +104,6 @@ def lookup_hardware():
     """
     import os, re
     from app.scrapers.lookup import lookup_hardware as do_lookup, score_candidate
-    from app.scrapers.validation import cpu_models_compatible
 
     REVIEW_THRESHOLD = 90
     OPENWEBUI_CONFIDENCE_CAP = 89  # Open WebUI (LLM) results never auto-accept, however well they score
@@ -139,8 +138,6 @@ def lookup_hardware():
         return m.group(1) if m else None
 
     def models_match(q_str, m_str):
-        if component_type == 'CPU' and not cpu_models_compatible(q_str, m_str):
-            return False
         qn, mn = normalize_model(q_str), normalize_model(m_str)
         if qn == mn or qn in mn or mn in qn:
             qv, mv = extract_version(q_str), extract_version(m_str)
@@ -163,39 +160,6 @@ def lookup_hardware():
     query_norm = normalize_model(query)
     print(f"[DB Search] Query: '{query}', Type: {ct_filter}", flush=True)
 
-    # ── Exact local match across component types ──────────────────────────
-    # A user can accidentally choose the wrong component type (for example,
-    # CPU for an X99 motherboard).  The local spec database is authoritative
-    # enough to correct that selection only when there is one unique exact
-    # normalized match.  Fuzzy/web/AI results never change component type.
-    query_key = compact_duplicate_key(query)
-    if query_key:
-        cross_type_exact = []
-        for spec in HardwareSpec.query.all():
-            keys = {
-                compact_duplicate_key(spec.model),
-                compact_duplicate_key(spec.display_name),
-                compact_duplicate_key(f"{spec.manufacturer or ''} {spec.model or ''}"),
-            }
-            keys.discard('')
-            if query_key in keys:
-                cross_type_exact.append(spec)
-
-        if len(cross_type_exact) == 1:
-            spec = cross_type_exact[0]
-            actual_type = spec.component_type.name if spec.component_type else None
-            selected_type = component_type if component_type and component_type != 'auto' else None
-            result = _spec_to_dict(spec, source='database', confidence=100)
-            if selected_type and actual_type and selected_type != actual_type:
-                result['component_type_corrected'] = True
-                result['previous_component_type'] = selected_type
-                result['message'] = f"Exact database match found as {actual_type}; component type changed from {selected_type}."
-                print(
-                    f"[DB Search] Exact cross-type match: {query} selected={selected_type} actual={actual_type}",
-                    flush=True,
-                )
-            return jsonify(result)
-
     # ── Collect DB candidates (all strategies, deduped, scored) ───────────
     _seen_ids = {}   # spec_id → candidate dict
 
@@ -208,9 +172,6 @@ def lookup_hardware():
 
     def add_db_candidate(spec):
         if not spec or spec.id in _seen_ids:
-            return
-        if component_type == 'CPU' and not cpu_models_compatible(query, spec.display_name):
-            print(f"[DB Search] Rejected CPU mismatch: {query} != {spec.display_name}", flush=True)
             return
         conf = score_candidate(query, spec.display_name, spec.manufacturer, component_type)
         d = _spec_to_dict(spec, source='database', confidence=conf)
@@ -575,10 +536,6 @@ def check_duplicates():
     except (TypeError, ValueError):
         hardware_spec_id = None
 
-    include_specs = data.get('include_specs', True)
-    if isinstance(include_specs, str):
-        include_specs = include_specs.strip().lower() not in {'0', 'false', 'no', 'off'}
-
     result = find_duplicates(
         component_type_id=component_type_id,
         component_type_name=data.get('component_type') or data.get('component_type_name'),
@@ -586,7 +543,6 @@ def check_duplicates():
         manufacturer=data.get('manufacturer'),
         model=data.get('model') or data.get('query'),
         limit=int(data.get('limit') or 5),
-        include_specs=bool(include_specs),
     )
     return jsonify(result)
 

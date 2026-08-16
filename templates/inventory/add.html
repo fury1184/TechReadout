@@ -724,7 +724,6 @@ async function checkDuplicatesNow() {
                 manufacturer,
                 model,
                 limit: 5,
-                include_specs: false,
             })
         });
         if (!response.ok) return;
@@ -896,15 +895,9 @@ function applyLookupResult(data, silent = false) {
     if (data.manufacturer) manufacturerInput.value = data.manufacturer;
     if (data.model) modelInput.value = data.model;
 
-    const previousType = _getCtName();
-    let typeChanged = false;
     if (data.component_type) {
         for (let opt of componentType.options) {
-            if (opt.dataset.name === data.component_type) {
-                typeChanged = componentType.value !== opt.value;
-                componentType.value = opt.value;
-                break;
-            }
+            if (opt.dataset.name === data.component_type) { componentType.value = opt.value; break; }
         }
     }
 
@@ -929,10 +922,7 @@ function applyLookupResult(data, silent = false) {
             amazon: 'Fetched from Amazon', intel_ark: 'Fetched from Intel ARK',
             amd_official: 'Fetched from AMD Official', openwebui: 'Guessed by Open WebUI',
         }[data.source] || 'Fetched from web';
-        const correction = (data.component_type_corrected || typeChanged)
-            ? ` — component type changed ${escapeHtml(data.previous_component_type || previousType)} → ${escapeHtml(data.component_type)}`
-            : '';
-        showStatus(`✓ ${src}${conf}: ${data.manufacturer || ''} ${data.model}${correction}`, 'success');
+        showStatus(`✓ ${src}${conf}: ${data.manufacturer || ''} ${data.model}`, 'success');
         hideAiImport();
     }
 }

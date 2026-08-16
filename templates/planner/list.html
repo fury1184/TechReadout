@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Build Planner - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Build Planner</h1>
+    <a href="{{ url_for('planner.new_plan') }}" class="btn btn-primary">
+        <i class="bi bi-plus-lg"></i> New Build Plan
+    </a>
+</div>
+
+<div class="row g-4">
+    {% for plan in plans %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">{{ plan.name }}</h5>
+                <span class="badge bg-{{ 'success' if plan.status == 'Complete' else 'primary' if plan.status == 'Ready' else 'warning' if plan.status == 'Building' else 'secondary' }}">
+                    {{ plan.status }}
+                </span>
+            </div>
+            <div class="card-body">
+                {% if plan.description %}
+                <p class="card-text text-muted small">{{ plan.description[:100] }}{% if plan.description|length > 100 %}...{% endif %}</p>
+                {% endif %}
+                
+                <div class="small">
+                    {% if plan.use_case %}
+                    <div><strong>Use Case:</strong> {{ plan.use_case }}</div>
+                    {% endif %}
+                    {% if plan.cpu_socket %}
+                    <div><strong>Socket:</strong> {{ plan.cpu_socket }}</div>
+                    {% endif %}
+                    {% if plan.min_ram_gb %}
+                    <div><strong>Min RAM:</strong> {{ plan.min_ram_gb }} GB</div>
+                    {% endif %}
+                    {% if plan.min_vram_gb %}
+                    <div><strong>Min VRAM:</strong> {{ plan.min_vram_gb }} GB</div>
+                    {% endif %}
+                    {% if plan.budget %}
+                    <div><strong>Budget:</strong> ${{ plan.budget }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-footer bg-transparent">
+                <a href="{{ url_for('planner.detail', id=plan.id) }}" class="btn btn-sm btn-outline-primary">
+                    View Details
+                </a>
+                <a href="{{ url_for('planner.edit_plan', id=plan.id) }}" class="btn btn-sm btn-outline-secondary">
+                    Edit
+                </a>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-tools display-4 text-muted mb-3"></i>
+                <p class="text-muted mb-3">No build plans yet. Plan your next build!</p>
+                <a href="{{ url_for('planner.new_plan') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg"></i> Create Build Plan
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

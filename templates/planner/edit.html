@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Edit {{ plan.name }} - Build Planner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Edit Build Plan</h1>
+    <a href="{{ url_for('planner.detail', id=plan.id) }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Build Name *</label>
+                    <input type="text" name="name" class="form-control" required value="{{ plan.name }}">
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select name="status" class="form-select">
+                        {% for s in ['Planning', 'Ready', 'Building', 'Complete', 'Cancelled'] %}
+                        <option value="{{ s }}" {% if plan.status == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Use Case</label>
+                    <select name="use_case" class="form-select">
+                        <option value="">Select...</option>
+                        {% for uc in ['Gaming', 'Workstation', 'Server', 'HTPC', 'NAS', 'Development', 'General'] %}
+                        <option value="{{ uc }}" {% if plan.use_case == uc %}selected{% endif %}>{{ uc }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-12">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control" rows="2">{{ plan.description or '' }}</textarea>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Minimum RAM (GB)</label>
+                    <input type="number" name="min_ram_gb" class="form-control" value="{{ plan.min_ram_gb or '' }}">
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Minimum GPU VRAM (GB)</label>
+                    <input type="number" name="min_vram_gb" class="form-control" value="{{ plan.min_vram_gb or '' }}">
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">CPU Socket</label>
+                    <select name="cpu_socket" class="form-select">
+                        <option value="">Any Socket</option>
+                        {% for socket in sockets %}
+                        <option value="{{ socket }}" {% if plan.cpu_socket == socket %}selected{% endif %}>{{ socket }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Budget</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="budget" class="form-control" step="0.01" value="{{ plan.budget or '' }}">
+                    </div>
+                </div>
+                
+                <div class="col-12 mt-4">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg"></i> Save Changes
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -206,14 +206,8 @@ def find_duplicates(
     manufacturer: Optional[str] = None,
     model: Optional[str] = None,
     limit: int = 5,
-    include_specs: bool = True,
 ) -> Dict[str, Any]:
-    """Find duplicate records for one prospective item.
-
-    ``include_specs=False`` is used by Add Inventory: reusing an existing
-    HardwareSpec is expected and should not be presented as a duplicate
-    physical item.
-    """
+    """Find duplicate specs and inventory rows for one prospective item."""
     if hardware_spec_id:
         spec = HardwareSpec.query.get(hardware_spec_id)
         if spec:
@@ -228,7 +222,7 @@ def find_duplicates(
         model=model,
         exclude_spec_id=hardware_spec_id,
         limit=limit,
-    ) if include_specs else []
+    )
     inventory = find_duplicate_inventory_items(
         component_type_id=component_type_id,
         component_type_name=component_type_name,
