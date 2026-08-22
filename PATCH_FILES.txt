@@ -1,47 +1,29 @@
-TechReadOut 3.5.10 Patch
-========================
+TechReadOut 3.5.13 - Component Type Editing Patch
+=================================================
 
-Apply over TechReadOut 3.5.9 by copying these files into the TechReadOut
-project root while preserving their paths.
+Applies over: TechReadOut 3.5.12
+Database migration: NOT required
 
 Changed files:
-- app/routes/api.py
-- app/duplicates.py
-- app/templates/inventory/add.html
-- app/version.py
+  app/version.py
+  app/spec_editor.py
+  app/routes/main.py
+  app/templates/specs/edit.html
 
 Changes:
-1. Cross-type exact database lookup
-   - Lookup first checks for one unique exact normalized HardwareSpec match
-     across all component types.
-   - If the user selected the wrong type, an exact local database match can
-     correct the component type automatically.
-   - Example: selecting CPU and searching "Machinist X99 MD8" will switch the
-     form to Motherboard when that exact motherboard spec exists locally.
-   - Fuzzy, web scraper, and AI results do NOT automatically change type.
-   - Ambiguous/multiple exact matches do NOT automatically change type.
+- General Hardware Spec Editor now allows changing Component Type.
+- Selecting another type reloads the editor with that type's relevant fields.
+- Saving a component-type change clears stale fields belonging to other types.
+- All inventory rows linked to the shared HardwareSpec are updated to the corrected component type.
+- Type changes are recorded in the existing manual-edit metadata, including old/new type and cleared fields.
+- Version updated to 3.5.13.
 
-2. Inventory duplicate warning cleanup
-   - Add Inventory no longer warns simply because the HardwareSpec already
-     exists. Reusing a spec is normal and expected.
-   - Duplicate warnings on Add Inventory are now for physical Inventory rows.
-   - The generic duplicate API can still include spec duplicates when another
-     caller explicitly wants them.
+Install:
+1. Back up your current TechReadOut folder/database.
+2. Extract this zip over the TechReadOut 3.5.12 application root, preserving paths.
+3. Rebuild/recreate the app:
 
-3. Version updated to 3.5.10.
+   cd /opt/stacks/techreadout
+   docker compose up -d --build --force-recreate
 
-Database migration: NOT REQUIRED.
-
-After copying the patch:
-
-  cd /opt/stacks/techreadout
-  docker compose up -d --build --force-recreate
-
-Then hard-refresh the browser (Ctrl+F5).
-
-Quick verification:
-- Select CPU, enter an exact motherboard model already in Hardware Specs, and
-  click Lookup. The component type should automatically switch to Motherboard.
-- If that spec has no physical inventory item, no duplicate warning should be
-  shown. After adding one physical item, lookup/add again should warn about the
-  existing inventory item.
+4. Hard-refresh the browser (Ctrl+F5).

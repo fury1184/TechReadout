@@ -7,6 +7,9 @@ import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
 from app.inventory_rules import inventory_quantity, enforce_assignment_status
 from app.compatibility import check_inventory_items
+from app.name_normalization import (
+    NameProposal, normalize_manufacturer, normalize_model_display
+)
 
 bp = Blueprint('main', __name__)
 
@@ -205,11 +208,15 @@ def inventory_add():
                     break
             
             if has_manual_specs and custom_name:
-                # Create a new HardwareSpec with manual data
+                # Create a new HardwareSpec with conservative name cleanup.
+                normalized_manufacturer = normalize_manufacturer(custom_manufacturer)
+                normalized_model = normalize_model_display(
+                    normalized_manufacturer, custom_name, ct_name
+                )
                 spec = HardwareSpec(
                     component_type_id=component_type_id,
-                    manufacturer=custom_manufacturer or None,
-                    model=custom_name,
+                    manufacturer=normalized_manufacturer,
+                    model=normalized_model or custom_name,
                     source_url=None,
                     raw_data={'source': 'manual_entry'},
                     # CPU fields
@@ -836,6 +843,189 @@ def inventory_sell(id):
         return redirect(url_for('main.inventory_list'))
     
     return render_template('inventory/sell.html', item=item, today=datetime.utcnow().strftime('%Y-%m-%d'))
+
+
+
+@bp.route('/maintenance/normalize-names', methods=['GET', 'POST'])
+def normalize_names():
+    """Preview and optionally apply conservative cleanup to existing hardware names."""
+    proposals = []
+
+    # Linked inventory inherits HardwareSpec.display_name, so normalize the spec once.
+    for spec in HardwareSpec.query.order_by(HardwareSpec.id).all():
+        component_name = spec.component_type.name if spec.component_type else 'Other'
+        new_manufacturer = normalize_manufacturer(spec.manufacturer)
+        new_model = normalize_model_display(new_manufacturer, spec.model, component_name)
+        proposal = NameProposal(
+            record_type='spec', record_id=spec.id, component_type=component_name,
+            old_manufacturer=spec.manufacturer, old_model=spec.model,
+            new_manufacturer=new_manufacturer, new_model=new_model,
+        )
+        if proposal.changed:
+            proposals.append(proposal)
+
+    # Only standalone/custom inventory needs its own rename; linked inventory follows its spec.
+    for item in Inventory.query.filter(Inventory.custom_name.isnot(None)).order_by(Inventory.id).all():
+        component_name = item.component_type.name if item.component_type else 'Other'
+        new_manufacturer = normalize_manufacturer(item.custom_manufacturer)
+        new_model = normalize_model_display(new_manufacturer, item.custom_name, component_name)
+        proposal = NameProposal(
+            record_type='inventory', record_id=item.id, component_type=component_name,
+            old_manufacturer=item.custom_manufacturer, old_model=item.custom_name,
+            new_manufacturer=new_manufacturer, new_model=new_model,
+        )
+        if proposal.changed:
+            proposals.append(proposal)
+
+    if request.method == 'POST':
+        selected = set(request.form.getlist('selected'))
+        changed = 0
+        for proposal in proposals:
+            key = f'{proposal.record_type}:{proposal.record_id}'
+            if key not in selected:
+                continue
+            if proposal.record_type == 'spec':
+                record = HardwareSpec.query.get(proposal.record_id)
+                if record:
+                    record.manufacturer = proposal.new_manufacturer
+                    record.model = proposal.new_model
+                    changed += 1
+            else:
+                record = Inventory.query.get(proposal.record_id)
+                if record:
+                    record.custom_manufacturer = proposal.new_manufacturer
+                    record.custom_name = proposal.new_model
+                    changed += 1
+
+        if changed:
+            db.session.commit()
+            flash(f'Normalized names on {changed} record(s).', 'success')
+        else:
+            flash('No name changes were selected.', 'info')
+        return redirect(url_for('main.normalize_names'))
+
+    return render_template('maintenance/normalize_names.html', proposals=proposals)
+
+@bp.route('/specs/<int:id>/edit', methods=['GET', 'POST'])
+def specs_edit(id):
+    """Manually correct a shared hardware specification record."""
+    from app.spec_editor import (
+        editable_fields, coerce_value, clear_irrelevant_type_fields
+    )
+
+    spec = HardwareSpec.query.get_or_404(id)
+    component_types = ComponentType.query.order_by(ComponentType.name).all()
+
+    # GET can preview another type before saving so the form displays the
+    # correct set of fields. This does not modify the database.
+    preview_type = None
+    preview_type_id = request.args.get('edit_type_id', type=int)
+    if preview_type_id:
+        preview_type = ComponentType.query.get(preview_type_id)
+
+    active_type = preview_type or spec.component_type
+    active_type_name = active_type.name if active_type else ''
+    fields = editable_fields(active_type_name)
+
+    if request.method == 'POST':
+        requested_type_id = request.form.get('component_type_id', type=int)
+        target_type = ComponentType.query.get(requested_type_id) if requested_type_id else None
+        if not target_type:
+            flash('Please select a valid component type.', 'danger')
+            return render_template(
+                'specs/edit.html', spec=spec, fields=fields,
+                component_types=component_types, active_type=active_type
+            )
+
+        old_type = spec.component_type
+        old_type_name = old_type.name if old_type else ''
+        target_type_name = target_type.name
+        fields = editable_fields(target_type_name)
+
+        changed_fields = []
+        errors = []
+        for field_name, label, field_type, unit in fields:
+            # If the browser submitted immediately after a type selector change
+            # without first reloading the target field set, preserve fields that
+            # were not present instead of silently blanking them.
+            if field_name not in request.form:
+                continue
+            try:
+                new_value = coerce_value(request.form.get(field_name), field_type)
+            except (ValueError, TypeError) as exc:
+                errors.append(f'{label}: {exc}')
+                continue
+            if getattr(spec, field_name, None) != new_value:
+                setattr(spec, field_name, new_value)
+                changed_fields.append(field_name)
+
+        if errors:
+            for error in errors:
+                flash(error, 'danger')
+            return render_template(
+                'specs/edit.html', spec=spec, fields=fields,
+                component_types=component_types, active_type=target_type
+            )
+
+        type_changed = spec.component_type_id != target_type.id
+        cleared_fields = []
+        linked_inventory_count = 0
+        if type_changed:
+            # Clear old/foreign type data so a corrected Motherboard does not
+            # retain CPU cores/clocks, etc.
+            cleared_fields = clear_irrelevant_type_fields(spec, target_type_name)
+            changed_fields.extend(field for field in cleared_fields if field not in changed_fields)
+
+            spec.component_type_id = target_type.id
+            changed_fields.append('component_type_id')
+
+            # Inventory stores its own component_type_id. Keep every item linked
+            # to this shared spec consistent with the corrected spec type.
+            linked_items = Inventory.query.filter_by(hardware_spec_id=spec.id).all()
+            for item in linked_items:
+                if item.component_type_id != target_type.id:
+                    item.component_type_id = target_type.id
+                    linked_inventory_count += 1
+
+        if changed_fields:
+            raw = dict(spec.raw_data or {}) if isinstance(spec.raw_data, dict) else {}
+            previous = raw.get('_manual_edits') if isinstance(raw.get('_manual_edits'), dict) else {}
+            all_fields = sorted(set(previous.get('fields', [])) | set(changed_fields))
+            manual_meta = {
+                'fields': all_fields,
+                'last_changed_fields': changed_fields,
+                'edited_at': datetime.utcnow().isoformat() + 'Z',
+                'note': 'Manual edits take precedence over scraped/AI values.',
+            }
+            if type_changed:
+                manual_meta['component_type_change'] = {
+                    'from': old_type_name or None,
+                    'to': target_type_name,
+                    'cleared_fields': cleared_fields,
+                    'linked_inventory_updated': linked_inventory_count,
+                }
+            raw['_manual_edits'] = manual_meta
+            spec.raw_data = raw
+            db.session.commit()
+
+            msg = f'Updated {len(changed_fields)} field(s) for {spec.display_name}.'
+            if type_changed:
+                msg += f' Component type changed from {old_type_name or "Unknown"} to {target_type_name}.'
+                if linked_inventory_count:
+                    msg += f' Updated {linked_inventory_count} linked inventory item(s).'
+            flash(msg, 'success')
+        else:
+            flash('No spec changes were made.', 'info')
+
+        next_url = request.form.get('next') or url_for('main.specs_list')
+        if not str(next_url).startswith('/') or str(next_url).startswith('//'):
+            next_url = url_for('main.specs_list')
+        return redirect(next_url)
+
+    return render_template(
+        'specs/edit.html', spec=spec, fields=fields,
+        component_types=component_types, active_type=active_type
+    )
 
 
 @bp.route('/specs')

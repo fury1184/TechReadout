@@ -81,6 +81,8 @@ def _lookup_metadata(spec):
 def source_name(spec, fallback='Database'):
     meta = _lookup_metadata(spec)
     raw_data = getattr(spec, 'raw_data', None)
+    if isinstance(raw_data, dict) and isinstance(raw_data.get('_manual_edits'), dict):
+        return 'Manual edit'
     if meta.get('source_name'):
         return meta.get('source_name')
     if isinstance(raw_data, dict) and raw_data.get('source'):

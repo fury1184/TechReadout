@@ -1,9 +1,13 @@
 from flask import Blueprint, jsonify, request
+from types import SimpleNamespace
 from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
 from app.serializers.hardware import hardware_spec_to_dict
 from app.inventory_rules import inventory_quantity
 from app.duplicates import find_duplicates, compact_duplicate_key
+from app.name_normalization import (
+    normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
+)
 
 bp = Blueprint('api', __name__)
 
@@ -22,10 +26,35 @@ def _save_scraper_result(result):
         db.session.add(ct)
         db.session.flush()
 
+    incoming_manufacturer = normalize_manufacturer(result.get('manufacturer'))
+    incoming_model = normalize_model_display(
+        incoming_manufacturer, result.get('model'), ct_name
+    )
+
+    # Prefer an established local name when this is the same exact part/model.
+    # This keeps retailer/AI titles from creating increasingly verbose names.
+    canonical_candidates = list(HardwareSpec.query.filter_by(component_type_id=ct.id).all())
+    # Also consider established standalone/custom inventory names.  Linked
+    # inventory already contributes through its HardwareSpec.
+    for item in Inventory.query.filter_by(component_type_id=ct.id).filter(Inventory.custom_name.isnot(None)).all():
+        canonical_candidates.append(SimpleNamespace(
+            manufacturer=item.custom_manufacturer, model=item.custom_name
+        ))
+
+    canonical_manufacturer, canonical_model = choose_existing_canonical_name(
+        incoming_manufacturer,
+        result.get('model'),
+        ct_name,
+        canonical_candidates,
+    )
+    if canonical_model:
+        incoming_manufacturer = canonical_manufacturer or incoming_manufacturer
+        incoming_model = canonical_model
+
     spec = HardwareSpec(
         component_type_id=ct.id,
-        manufacturer=result.get('manufacturer'),
-        model=result.get('model'),
+        manufacturer=incoming_manufacturer,
+        model=incoming_model or result.get('model'),
         source_url=result.get('source_url'),
         raw_data=result.get('raw_data'),
         cpu_socket=result.get('cpu_socket'),

@@ -6,11 +6,15 @@ Supports local and NAS backups.
 import os
 import json
 import shutil
+from types import SimpleNamespace
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app import db
 from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan
 from app.inventory_rules import inventory_quantity, enforce_assignment_status
+from app.name_normalization import (
+    normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
+)
 
 bp = Blueprint('backup', __name__)
 
@@ -696,8 +700,21 @@ def import_specs_json():
                     db.session.flush()
                 
                 # Check if spec already exists
-                model = spec_data.get('model', '')
-                manufacturer = spec_data.get('manufacturer', '')
+                manufacturer = normalize_manufacturer(spec_data.get('manufacturer'))
+                raw_model = spec_data.get('model', '')
+                model = normalize_model_display(manufacturer, raw_model, ct_name)
+
+                canonical_candidates = list(HardwareSpec.query.filter_by(component_type_id=ct.id).all())
+                for item in Inventory.query.filter_by(component_type_id=ct.id).filter(Inventory.custom_name.isnot(None)).all():
+                    canonical_candidates.append(SimpleNamespace(
+                        manufacturer=item.custom_manufacturer, model=item.custom_name
+                    ))
+                canonical_manufacturer, canonical_model = choose_existing_canonical_name(
+                    manufacturer, raw_model, ct_name, canonical_candidates
+                )
+                if canonical_model:
+                    manufacturer = canonical_manufacturer or manufacturer
+                    model = canonical_model
                 
                 if not model:
                     errors.append(f"Skipped entry without model name")
