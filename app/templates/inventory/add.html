@@ -783,6 +783,19 @@ const specsDivMap = {
     'Cooler': 'coolerSpecs', 'Case': 'caseSpecs', 'Fan': 'fanSpecs'
 };
 
+function clearManualSpecValues() {
+    // These fields describe the model being looked up. Keeping values from a
+    // prior CPU after a new lookup misses can silently save completely wrong
+    // specs (for example an LGA1700 CPU's fields on an E5 Xeon).
+    manualSpecsSection.querySelectorAll('input, select, textarea').forEach(el => {
+        if (el.type === 'checkbox' || el.type === 'radio') {
+            el.checked = false;
+        } else {
+            el.value = '';
+        }
+    });
+}
+
 function showManualSpecs(show, ctName = null) {
     if (!show) { manualSpecsSection.style.display = 'none'; return; }
     document.querySelectorAll('.manual-specs').forEach(d => d.style.display = 'none');
@@ -813,6 +826,7 @@ inventoryForm.addEventListener('submit', async function(e) {
 
 modelInput.addEventListener('input', function() {
     hardwareSpecId.value = '';
+    clearManualSpecValues();
     specsDisplay.style.display = 'none';
     lookedUpName.value = '';
     lookupAttempted = false;
@@ -858,9 +872,10 @@ async function doLookup(silent = false) {
         if (data.found) {
             applyLookupResult(data, silent);
         } else {
-            // Not found
+            // Not found: never expose stale specs from a prior lookup.
             hardwareSpecId.value = '';
             specsDisplay.style.display = 'none';
+            clearManualSpecValues();
             if (!silent) {
                 manualEntryMode = true;
                 showManualSpecs(true);
@@ -927,7 +942,7 @@ function applyLookupResult(data, silent = false) {
             database: 'Found in database', lookup_cache: 'Found in cache',
             human_review: 'Selection confirmed', techpowerup: 'Fetched from TechPowerUp',
             amazon: 'Fetched from Amazon', intel_ark: 'Fetched from Intel ARK',
-            amd_official: 'Fetched from AMD Official', openwebui: 'Guessed by Open WebUI',
+            cpu_monkey: 'Fetched from CPU-Monkey', amd_official: 'Fetched from AMD Official', openwebui: 'Guessed by Open WebUI',
         }[data.source] || 'Fetched from web';
         const correction = (data.component_type_corrected || typeChanged)
             ? ` — component type changed ${escapeHtml(data.previous_component_type || previousType)} → ${escapeHtml(data.component_type)}`
@@ -1010,6 +1025,7 @@ function _getSourceBadge(source) {
         techpowerup:  '<span class="badge bg-primary ms-1">TechPowerUp</span>',
         amazon:       '<span class="badge bg-warning text-dark ms-1">Amazon</span>',
         intel_ark:    '<span class="badge bg-info ms-1">Intel ARK</span>',
+        cpu_monkey:   '<span class="badge bg-info ms-1">CPU-Monkey</span>',
         amd_official: '<span class="badge bg-danger ms-1">AMD Official</span>',
         human_review: '<span class="badge bg-success ms-1">Confirmed</span>',
         openwebui:    '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1"><i class="bi bi-robot"></i> Open WebUI</span>',

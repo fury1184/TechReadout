@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
+from app.scrapers.validation import extract_cpu_identity
+
 
 _GENERIC_VENDOR_SUFFIXES = {
     "technology", "technologies", "inc", "inc.", "corp", "corp.",
@@ -30,6 +32,14 @@ _TRAILING_RETAIL_WORDS = {
     "black", "white", "red", "blue", "silver", "gray", "grey",
     "retail", "oem", "bulk", "new",
 }
+
+# Website/page-title text that can leak into CPU model names when a scraper
+# uses an H1 as its model source.  Keep this deliberately narrow so legitimate
+# model suffixes (K/KF/X3D/v2/etc.) are never removed.
+_CPU_TRAILING_PAGE_NOISE = (
+    r"\s*(?:[-–—|:]\s*)?benchmarks?\s*(?:&|and)\s*spec(?:s|ifications)\s*$",
+    r"\s*(?:[-–—|:]\s*)?benchmark(?:s)?\s*,?\s*tests?\s*(?:&|and)\s*spec(?:s|ifications)\s*$",
+)
 
 
 def _clean_space(value: Optional[str]) -> str:
@@ -130,7 +140,10 @@ def normalize_model_display(
     text = _strip_leading_vendor(text, manufacturer)
 
     ctype = (component_type or "").casefold()
-    if ctype == "ram":
+    if ctype == "cpu":
+        for pattern in _CPU_TRAILING_PAGE_NOISE:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    elif ctype == "ram":
         text = _normalize_ram_title(text)
 
     # Generic punctuation/spacing cleanup after component-specific rules.
@@ -198,6 +211,14 @@ def choose_existing_canonical_name(
     part = extract_part_number(model)
     key = comparison_key(clean_vendor, clean_model)
 
+    # CPU generations/revisions are part of the model identity, not optional
+    # marketing text.  In particular, first-generation Xeon E5 parts are
+    # commonly written without a "v1" suffix, so E5-2680 and E5-2680 v2 must
+    # never be canonicalized to the same record just because their extracted
+    # part-number token is both "E5-2680".
+    is_cpu = (component_type or "").casefold() == "cpu"
+    cpu_identity = extract_cpu_identity(clean_model) if is_cpu else None
+
     best = None
     best_score = -1
     for candidate in candidates:
@@ -206,6 +227,11 @@ def choose_existing_canonical_name(
         cand_model = normalize_model_display(cand_vendor, cand_model_raw, component_type)
         if clean_vendor and cand_vendor and clean_vendor.casefold() != cand_vendor.casefold():
             continue
+
+        if is_cpu and cpu_identity is not None:
+            candidate_cpu_identity = extract_cpu_identity(cand_model)
+            if candidate_cpu_identity is not None and candidate_cpu_identity != cpu_identity:
+                continue
 
         score = 0
         cand_part = extract_part_number(cand_model_raw)

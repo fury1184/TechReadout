@@ -12,6 +12,7 @@ from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Optional
 
 from app.models import ComponentType, HardwareSpec, Inventory
+from app.scrapers.validation import extract_cpu_identity
 
 _COMMON_WORDS = {
     "intel", "amd", "nvidia", "geforce", "radeon", "core", "xeon", "ryzen",
@@ -69,7 +70,16 @@ def _match_level(score: int) -> str:
 
 
 def duplicate_score(candidate_manufacturer: Any, candidate_model: Any, manufacturer: Any, model: Any) -> int:
-    """Return 0-100 duplicate confidence for two manufacturer/model pairs."""
+    """Return 0-100 duplicate confidence for two manufacturer/model pairs.
+
+    Recognizable CPU identities are strict: E5-2696 v4 is never a duplicate of
+    E5-2680 v4 merely because the surrounding Xeon family text is similar.
+    """
+    cpu_a = extract_cpu_identity(str(candidate_model or ''))
+    cpu_b = extract_cpu_identity(str(model or ''))
+    if cpu_a is not None and cpu_b is not None and cpu_a != cpu_b:
+        return 0
+
     model_a = normalize_duplicate_text(candidate_model)
     model_b = normalize_duplicate_text(model)
     compact_a = compact_duplicate_key(candidate_model)

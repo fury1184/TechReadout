@@ -139,6 +139,7 @@ def score_candidate(query: str, candidate_name: str, candidate_manufacturer: str
 
 SOURCE_TRUST = {
     'intel_ark': 98,
+    'cpu_monkey': 91,
     'amd_official': 96,
     'manufacturer': 95,
     'techpowerup': 93,
@@ -151,6 +152,7 @@ SOURCE_TRUST = {
 def source_display_name(source: str) -> str:
     names = {
         'intel_ark': 'Intel ARK',
+        'cpu_monkey': 'CPU-Monkey',
         'amd_official': 'AMD Official',
         'manufacturer': 'Manufacturer',
         'techpowerup': 'TechPowerUp',
