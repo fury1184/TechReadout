@@ -31,6 +31,9 @@
             background: #212529;
             padding-top: 1rem;
             z-index: 100;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
         }
         .sidebar .nav-link {
             color: rgba(255,255,255,0.8);
@@ -58,10 +61,8 @@
             margin-bottom: 1rem;
         }
         .sidebar-footer {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            margin-top: auto;
+            flex-shrink: 0;
             padding: 1rem 1.25rem;
             border-top: 1px solid rgba(255,255,255,0.1);
             font-size: 0.8rem;
@@ -171,6 +172,11 @@
             <li class="nav-item">
                 <a class="nav-link {% if 'cache' in request.endpoint %}active{% endif %}" href="{{ url_for('main.cache_list') }}">
                     <i class="bi bi-lightning"></i> Lookup Cache
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'main.normalize_names' %}active{% endif %}" href="{{ url_for('main.normalize_names') }}">
+                    <i class="bi bi-type"></i> Normalize Names
                 </a>
             </li>
             <li class="nav-item">

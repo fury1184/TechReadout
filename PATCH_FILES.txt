@@ -1,47 +1,40 @@
-TechReadOut 3.5.10 Patch
-========================
+TechReadOut patch — NAS backup path editable from the app (no version bump)
+================================================================
 
-Apply over TechReadOut 3.5.9 by copying these files into the TechReadOut
-project root while preserving their paths.
+Files in this patch (paths relative to repo root):
 
-Changed files:
-- app/routes/api.py
-- app/duplicates.py
-- app/templates/inventory/add.html
-- app/version.py
+  app/routes/backup.py             - Added AppSetting import.
+                                    - New get_nas_path() resolver: prefers
+                                      AppSetting('nas_backup_path'), falls
+                                      back to the NAS_BACKUP_PATH env var for
+                                      existing setups that already have it in
+                                      docker-compose.yml/.env.
+                                    - New POST /backup/nas-path route
+                                      (update_nas_path) — saves the path via
+                                      AppSetting.set(), warns (but doesn't
+                                      block) if the path isn't visible inside
+                                      the container yet.
+                                    - index() and create_backup() now call
+                                      get_nas_path() instead of referencing
+                                      the old module-level NAS_PATH constant.
+                                    NOTE: this only changes *where within an
+                                    already-mounted volume* backups are
+                                    written. The NAS share itself still needs
+                                    a `volumes:` entry in docker-compose.yml
+                                    to be reachable from inside the
+                                    container — this patch doesn't add or
+                                    change any mount.
 
-Changes:
-1. Cross-type exact database lookup
-   - Lookup first checks for one unique exact normalized HardwareSpec match
-     across all component types.
-   - If the user selected the wrong type, an exact local database match can
-     correct the component type automatically.
-   - Example: selecting CPU and searching "Machinist X99 MD8" will switch the
-     form to Motherboard when that exact motherboard spec exists locally.
-   - Fuzzy, web scraper, and AI results do NOT automatically change type.
-   - Ambiguous/multiple exact matches do NOT automatically change type.
+  app/templates/backup/index.html  Replaced the static "edit
+                                    docker-compose.yml" alert with an inline
+                                    "NAS Backup Path" card — a text field +
+                                    Save button, pre-filled with the current
+                                    path, with a note about the volume-mount
+                                    requirement above.
 
-2. Inventory duplicate warning cleanup
-   - Add Inventory no longer warns simply because the HardwareSpec already
-     exists. Reusing a spec is normal and expected.
-   - Duplicate warnings on Add Inventory are now for physical Inventory rows.
-   - The generic duplicate API can still include spec duplicates when another
-     caller explicitly wants them.
+To apply: copy both files over the matching paths in your working tree, then
+docker compose up -d --build --force-recreate.
 
-3. Version updated to 3.5.10.
-
-Database migration: NOT REQUIRED.
-
-After copying the patch:
-
-  cd /opt/stacks/techreadout
-  docker compose up -d --build --force-recreate
-
-Then hard-refresh the browser (Ctrl+F5).
-
-Quick verification:
-- Select CPU, enter an exact motherboard model already in Hardware Specs, and
-  click Lookup. The component type should automatically switch to Motherboard.
-- If that spec has no physical inventory item, no duplicate warning should be
-  shown. After adding one physical item, lookup/add again should warn about the
-  existing inventory item.
+This patch was NOT versioned as its own release, and is kept separate from
+the other pending patches (3.6.1 sidebar fix, JSON export/CSV fix) per your
+request.

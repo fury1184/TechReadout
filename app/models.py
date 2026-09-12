@@ -340,6 +340,7 @@ class LookupCache(db.Model):
     @staticmethod
     def make_key(query, component_type, lite_mode=False, use_intel_ark=False, use_amd_official=False):
         parts = [
+            'lookup-chain-v4',  # invalidate stale misses after CPU-Monkey paid fallback fix
             LookupCache.normalize_query(query),
             (component_type or 'auto').strip().lower(),
             'lite' if lite_mode else 'full',

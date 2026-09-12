@@ -156,6 +156,12 @@ def extract_cpu_identity(text: str):
     if match:
         return (match.group(1), match.group(2), match.group(3) or '', match.group(4) or '')
 
+    # Legacy Intel Xeon X5660 / X5650 / L5640 / W3680 / E5640.
+    # These pre-E5 Xeons use a single family letter plus four digits.
+    match = re.search(r'\b([xlwe])\s*[- ]?\s*(\d{4})([a-z]?)\b', value)
+    if match:
+        return ('xeon-' + match.group(1), match.group(2), match.group(3) or '', '')
+
     # Intel Core i7-9700K / i9 13900KS
     match = re.search(r'\b(i[3579])\s*[- ]?\s*(\d{4,5})([a-z]{0,2})\b', value)
     if match:

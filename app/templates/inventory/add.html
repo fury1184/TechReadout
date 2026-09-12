@@ -783,6 +783,19 @@ const specsDivMap = {
     'Cooler': 'coolerSpecs', 'Case': 'caseSpecs', 'Fan': 'fanSpecs'
 };
 
+function clearManualSpecValues() {
+    // These fields describe the model being looked up. Keeping values from a
+    // prior CPU after a new lookup misses can silently save completely wrong
+    // specs (for example an LGA1700 CPU's fields on an E5 Xeon).
+    manualSpecsSection.querySelectorAll('input, select, textarea').forEach(el => {
+        if (el.type === 'checkbox' || el.type === 'radio') {
+            el.checked = false;
+        } else {
+            el.value = '';
+        }
+    });
+}
+
 function showManualSpecs(show, ctName = null) {
     if (!show) { manualSpecsSection.style.display = 'none'; return; }
     document.querySelectorAll('.manual-specs').forEach(d => d.style.display = 'none');
@@ -813,6 +826,7 @@ inventoryForm.addEventListener('submit', async function(e) {
 
 modelInput.addEventListener('input', function() {
     hardwareSpecId.value = '';
+    clearManualSpecValues();
     specsDisplay.style.display = 'none';
     lookedUpName.value = '';
     lookupAttempted = false;
@@ -840,7 +854,7 @@ async function doLookup(silent = false) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                query, component_type: ctName
+                query, component_type: ctName, manufacturer: manufacturerInput.value.trim()
             })
         });
         const data = await response.json();
@@ -849,7 +863,10 @@ async function doLookup(silent = false) {
         if (data.status === 'needs_review') {
             lookupBtn.disabled = false;
             lookupBtn.innerHTML = '<i class="bi bi-search"></i> Lookup';
-            showStatus(`⚠️ Low-confidence matches found — please review below.`, 'warning');
+            const mfgTip = data.manufacturer_unknown
+                ? ' Tip: entering a manufacturer above (e.g. ASUS, MSI, Gigabyte) may improve results.'
+                : '';
+            showStatus(`⚠️ Low-confidence matches found — please review below.${mfgTip}`, 'warning');
             showReviewModal(data.candidates, query, ctName);
             return;
         }
@@ -858,12 +875,16 @@ async function doLookup(silent = false) {
         if (data.found) {
             applyLookupResult(data, silent);
         } else {
-            // Not found
+            // Not found: never expose stale specs from a prior lookup.
             hardwareSpecId.value = '';
             specsDisplay.style.display = 'none';
+            clearManualSpecValues();
             if (!silent) {
                 manualEntryMode = true;
                 showManualSpecs(true);
+                const mfgTip = data.manufacturer_unknown
+                    ? ' Tip: entering a manufacturer above (e.g. ASUS, MSI, Gigabyte) may find better results.'
+                    : '';
                 if (data.no_token) {
                     showStatus('⚠️ Spec lookup not configured. Enter specs manually.', 'warning');
                 } else if (data.credits_exhausted) {
@@ -871,7 +892,7 @@ async function doLookup(silent = false) {
                 } else if (data.unsupported_type) {
                     showStatus('ℹ️ ' + data.message, 'info');
                 } else {
-                    showStatus('⚠️ No specs found. Enter specs manually below or save as-is.', 'warning');
+                    showStatus(`⚠️ No specs found. Enter specs manually below or save as-is.${mfgTip}`, 'warning');
                 }
                 showAiImport(query, ctName);
             }
@@ -927,7 +948,9 @@ function applyLookupResult(data, silent = false) {
             database: 'Found in database', lookup_cache: 'Found in cache',
             human_review: 'Selection confirmed', techpowerup: 'Fetched from TechPowerUp',
             amazon: 'Fetched from Amazon', intel_ark: 'Fetched from Intel ARK',
-            amd_official: 'Fetched from AMD Official', openwebui: 'Guessed by Open WebUI',
+            cpu_monkey: 'Fetched from CPU-Monkey', amd_official: 'Fetched from AMD Official',
+            newegg: 'Fetched from Newegg', manufacturer: 'Fetched from manufacturer site',
+            openwebui: 'Guessed by Open WebUI',
         }[data.source] || 'Fetched from web';
         const correction = (data.component_type_corrected || typeChanged)
             ? ` — component type changed ${escapeHtml(data.previous_component_type || previousType)} → ${escapeHtml(data.component_type)}`
@@ -1010,7 +1033,10 @@ function _getSourceBadge(source) {
         techpowerup:  '<span class="badge bg-primary ms-1">TechPowerUp</span>',
         amazon:       '<span class="badge bg-warning text-dark ms-1">Amazon</span>',
         intel_ark:    '<span class="badge bg-info ms-1">Intel ARK</span>',
+        cpu_monkey:   '<span class="badge bg-info ms-1">CPU-Monkey</span>',
         amd_official: '<span class="badge bg-danger ms-1">AMD Official</span>',
+        newegg:       '<span class="badge bg-warning text-dark ms-1">Newegg</span>',
+        manufacturer: '<span class="badge bg-primary ms-1">Manufacturer</span>',
         human_review: '<span class="badge bg-success ms-1">Confirmed</span>',
         openwebui:    '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1"><i class="bi bi-robot"></i> Open WebUI</span>',
     };

@@ -78,7 +78,7 @@
                     <th>Manufacturer</th>
                     <th>Key Specs</th>
                     <th>Source</th>
-                    <th style="width: 80px;">Actions</th>
+                    <th style="width: 110px;">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -105,6 +105,10 @@
                         {% endif %}
                     </td>
                     <td>
+                        <a href="{{ url_for('main.specs_edit', id=spec.id, next=request.full_path) }}"
+                           class="btn btn-sm btn-outline-primary" title="Edit specs">
+                            <i class="bi bi-pencil"></i>
+                        </a>
                         <button type="button" class="btn btn-sm btn-outline-danger spec-delete-btn" title="Delete"
                                 data-spec-id="{{ spec.id }}" data-spec-model="{{ spec.model }}">
                             <i class="bi bi-trash"></i>

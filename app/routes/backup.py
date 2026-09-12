@@ -6,17 +6,33 @@ Supports local and NAS backups.
 import os
 import json
 import shutil
+from types import SimpleNamespace
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app import db
-from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan
+from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan, AppSetting
 from app.inventory_rules import inventory_quantity, enforce_assignment_status
+from app.name_normalization import (
+    normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
+)
 
 bp = Blueprint('backup', __name__)
 
 # Default backup directory
 BACKUP_DIR = os.environ.get('BACKUP_DIR', '/app/data/backups')
-NAS_PATH = os.environ.get('NAS_BACKUP_PATH', '')
+
+
+def get_nas_path():
+    """Resolve the configured NAS backup path.
+
+    Prefers the AppSetting (editable from the Backup page, no redeploy
+    needed) and falls back to the NAS_BACKUP_PATH env var for anyone who set
+    it the old way in docker-compose.yml/.env. Note this only controls
+    *where within an already-mounted volume* backups are written — it can't
+    create a new mount into the container by itself; the NAS share still
+    needs to be mounted via docker-compose volumes first.
+    """
+    return (AppSetting.get('nas_backup_path') or '').strip() or os.environ.get('NAS_BACKUP_PATH', '')
 
 
 @bp.route('/')
@@ -26,12 +42,35 @@ def index():
     backups = Backup.query.order_by(Backup.created_at.desc()).all()
     
     # Check if NAS is configured
-    nas_configured = bool(NAS_PATH)
+    nas_path = get_nas_path()
+    nas_configured = bool(nas_path)
     
     return render_template('backup/index.html', 
                          backups=backups, 
                          nas_configured=nas_configured,
-                         nas_path=NAS_PATH)
+                         nas_path=nas_path)
+
+
+@bp.route('/nas-path', methods=['POST'])
+def update_nas_path():
+    """Save the NAS backup path from the Backup page (no redeploy needed)."""
+    path = request.form.get('nas_backup_path', '').strip()
+
+    AppSetting.set('nas_backup_path', path)
+    db.session.commit()
+
+    if path and not os.path.isdir(path):
+        flash(
+            f'Saved "{path}", but that path isn\'t visible inside the container yet — '
+            'make sure it\'s mounted as a volume in docker-compose.yml before creating a NAS backup.',
+            'warning'
+        )
+    elif path:
+        flash(f'NAS backup path set to {path}', 'success')
+    else:
+        flash('NAS backup path cleared.', 'success')
+
+    return redirect(url_for('backup.index'))
 
 
 @bp.route('/import-specs')
@@ -51,8 +90,9 @@ def create_backup():
     filename = f"techreadout_backup_{timestamp}.json"
     
     # Determine backup path
-    if backup_type == 'NAS' and NAS_PATH:
-        backup_path = os.path.join(NAS_PATH, filename)
+    nas_path = get_nas_path()
+    if backup_type == 'NAS' and nas_path:
+        backup_path = os.path.join(nas_path, filename)
     else:
         backup_type = 'Local'
         os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -318,39 +358,98 @@ def export_excel():
     )
 
 
+@bp.route('/export-json')
+def export_json():
+    """Export all data as a single downloadable JSON file.
+
+    Same shape/serialization as a Backup (reuses export_all_data()), but
+    returned directly to the browser as an attachment rather than written to
+    BACKUP_DIR/NAS and tracked in the Backup list — mirrors how
+    export_excel() behaves (instant download, no DB record created).
+    """
+    import io
+    from flask import send_file
+
+    data = export_all_data()
+    payload = json.dumps(data, indent=2, default=str).encode('utf-8')
+    buf = io.BytesIO(payload)
+    filename = f"techreadout_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/json'
+    )
+
+
 @bp.route('/export-csv')
 def export_csv():
-    """Export inventory to CSV format (compatible with PowerShell version)."""
+    """Export inventory to CSV format (compatible with PowerShell version).
+
+    Returns a real downloadable file: a single .csv if only one component
+    type has inventory, otherwise a .zip containing one .csv per component
+    type. Previously this returned a JSON object whose values were
+    CSV-formatted strings rather than an actual file — the browser would
+    just show/download JSON, not clean CSV, which is why this looked
+    confusing compared to the Excel export.
+    """
     import csv
     import io
-    from flask import Response
-    
-    # Create a ZIP with all CSVs
-    output = io.StringIO()
-    
-    # Export inventory items grouped by component type
+    import zipfile
+    from flask import send_file
+
     component_types = ComponentType.query.all()
-    
-    all_csv = {}
+
+    csv_files = {}  # filename -> csv text
     for ct in component_types:
         items = Inventory.query.filter_by(component_type_id=ct.id).all()
-        if items:
-            csv_output = io.StringIO()
-            writer = csv.writer(csv_output, quoting=csv.QUOTE_ALL)
-            
-            # Write header based on component type
-            headers = get_csv_headers(ct.name)
-            writer.writerow(headers)
-            
-            # Write data
-            for item in items:
-                row = format_csv_row(item, ct.name)
-                writer.writerow(row)
-            
-            all_csv[ct.name.lower()] = csv_output.getvalue()
-    
-    # Return as JSON with all CSVs
-    return jsonify(all_csv)
+        if not items:
+            continue
+
+        csv_output = io.StringIO()
+        writer = csv.writer(csv_output, quoting=csv.QUOTE_ALL)
+
+        # Write header based on component type
+        headers = get_csv_headers(ct.name)
+        writer.writerow(headers)
+
+        # Write data
+        for item in items:
+            row = format_csv_row(item, ct.name)
+            writer.writerow(row)
+
+        csv_files[f"{ct.name.lower()}.csv"] = csv_output.getvalue()
+
+    if not csv_files:
+        flash('No inventory data to export.', 'warning')
+        return redirect(url_for('backup.index'))
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+    if len(csv_files) == 1:
+        (filename, content), = csv_files.items()
+        buf = io.BytesIO(content.encode('utf-8'))
+        return send_file(
+            buf,
+            as_attachment=True,
+            download_name=f"techreadout_{filename}",
+            mimetype='text/csv'
+        )
+
+    # Multiple component types — bundle into a single zip so it's still one
+    # download, same as the Excel/JSON export buttons.
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for filename, content in csv_files.items():
+            zf.writestr(filename, content)
+    zip_buf.seek(0)
+
+    return send_file(
+        zip_buf,
+        as_attachment=True,
+        download_name=f"techreadout_export_{timestamp}.zip",
+        mimetype='application/zip'
+    )
 
 
 @bp.route('/import', methods=['POST'])
@@ -696,8 +795,21 @@ def import_specs_json():
                     db.session.flush()
                 
                 # Check if spec already exists
-                model = spec_data.get('model', '')
-                manufacturer = spec_data.get('manufacturer', '')
+                manufacturer = normalize_manufacturer(spec_data.get('manufacturer'))
+                raw_model = spec_data.get('model', '')
+                model = normalize_model_display(manufacturer, raw_model, ct_name)
+
+                canonical_candidates = list(HardwareSpec.query.filter_by(component_type_id=ct.id).all())
+                for item in Inventory.query.filter_by(component_type_id=ct.id).filter(Inventory.custom_name.isnot(None)).all():
+                    canonical_candidates.append(SimpleNamespace(
+                        manufacturer=item.custom_manufacturer, model=item.custom_name
+                    ))
+                canonical_manufacturer, canonical_model = choose_existing_canonical_name(
+                    manufacturer, raw_model, ct_name, canonical_candidates
+                )
+                if canonical_model:
+                    manufacturer = canonical_manufacturer or manufacturer
+                    model = canonical_model
                 
                 if not model:
                     errors.append(f"Skipped entry without model name")

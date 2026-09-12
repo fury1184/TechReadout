@@ -1,9 +1,13 @@
 from flask import Blueprint, jsonify, request
+from types import SimpleNamespace
 from app import db
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache
 from app.serializers.hardware import hardware_spec_to_dict
 from app.inventory_rules import inventory_quantity
 from app.duplicates import find_duplicates, compact_duplicate_key
+from app.name_normalization import (
+    normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
+)
 
 bp = Blueprint('api', __name__)
 
@@ -22,10 +26,35 @@ def _save_scraper_result(result):
         db.session.add(ct)
         db.session.flush()
 
+    incoming_manufacturer = normalize_manufacturer(result.get('manufacturer'))
+    incoming_model = normalize_model_display(
+        incoming_manufacturer, result.get('model'), ct_name
+    )
+
+    # Prefer an established local name when this is the same exact part/model.
+    # This keeps retailer/AI titles from creating increasingly verbose names.
+    canonical_candidates = list(HardwareSpec.query.filter_by(component_type_id=ct.id).all())
+    # Also consider established standalone/custom inventory names.  Linked
+    # inventory already contributes through its HardwareSpec.
+    for item in Inventory.query.filter_by(component_type_id=ct.id).filter(Inventory.custom_name.isnot(None)).all():
+        canonical_candidates.append(SimpleNamespace(
+            manufacturer=item.custom_manufacturer, model=item.custom_name
+        ))
+
+    canonical_manufacturer, canonical_model = choose_existing_canonical_name(
+        incoming_manufacturer,
+        result.get('model'),
+        ct_name,
+        canonical_candidates,
+    )
+    if canonical_model:
+        incoming_manufacturer = canonical_manufacturer or incoming_manufacturer
+        incoming_model = canonical_model
+
     spec = HardwareSpec(
         component_type_id=ct.id,
-        manufacturer=result.get('manufacturer'),
-        model=result.get('model'),
+        manufacturer=incoming_manufacturer,
+        model=incoming_model or result.get('model'),
         source_url=result.get('source_url'),
         raw_data=result.get('raw_data'),
         cpu_socket=result.get('cpu_socket'),
@@ -103,7 +132,10 @@ def lookup_hardware():
     Auto-accepts when confidence >= 90%.
     """
     import os, re
-    from app.scrapers.lookup import lookup_hardware as do_lookup, score_candidate
+    from app.scrapers.lookup import (
+        lookup_hardware as do_lookup, score_candidate,
+        detect_component_type, resolve_motherboard_manufacturer,
+    )
     from app.scrapers.validation import cpu_models_compatible
 
     REVIEW_THRESHOLD = 90
@@ -112,9 +144,23 @@ def lookup_hardware():
     data = request.get_json()
     query = (data.get('query') or '').strip()
     component_type = data.get('component_type', 'auto')
+    manufacturer_hint = (data.get('manufacturer') or '').strip()
 
     if not query:
         return jsonify({'error': 'Query required'}), 400
+
+    # ── Motherboard manufacturer nudge ──────────────────────────────────────
+    # Only meaningful for motherboard lookups, and only when we couldn't
+    # resolve a manufacturer from either the hint field or the query text —
+    # that's the one case where the manufacturer-site tier of the scraper
+    # chain gets skipped and knowing the brand would actually change the
+    # outcome. Attached to non-confident responses only (see below); never
+    # blocks the lookup itself.
+    effective_component_type = component_type if component_type != 'auto' else detect_component_type(query)
+    mobo_manufacturer_unknown = (
+        effective_component_type == 'Motherboard'
+        and not resolve_motherboard_manufacturer(query, manufacturer_hint)
+    )
 
     # ── Component-type filter ──────────────────────────────────────────────
     ct_filter = None
@@ -277,7 +323,10 @@ def lookup_hardware():
     # Check cache for a previously recorded miss (only skip scraper if no DB candidates either)
     cached = LookupCache.get_fresh(cache_key)
     if cached and cached.status == 'miss' and not sorted_db:
-        return jsonify({'found': False, 'message': 'No specs found for that model. Try manual entry.'})
+        return jsonify({
+            'found': False, 'message': 'No specs found for that model. Try manual entry.',
+            'manufacturer_unknown': mobo_manufacturer_unknown,
+        })
 
     # ── Web scraper ────────────────────────────────────────────────────────
     print(f"[Lookup] Falling through to web scraper for '{query}'", flush=True)
@@ -286,6 +335,7 @@ def lookup_hardware():
         lite_mode=data.get('lite_mode', False),
         use_intel_ark=data.get('use_intel_ark', False),
         use_amd_official=data.get('use_amd_official', False),
+        manufacturer_hint=manufacturer_hint,
     )
 
     scraper_candidate = None
@@ -346,7 +396,10 @@ def lookup_hardware():
     if not all_candidates:
         LookupCache.store_miss(cache_key, query, component_type)
         db.session.commit()
-        return jsonify({'found': False, 'message': 'No specs found for that model. Try manual entry.'})
+        return jsonify({
+            'found': False, 'message': 'No specs found for that model. Try manual entry.',
+            'manufacturer_unknown': mobo_manufacturer_unknown,
+        })
 
     best_conf = all_candidates[0]['confidence']
 
@@ -365,6 +418,7 @@ def lookup_hardware():
         'candidates': all_candidates,
         'query': query,
         'component_type': component_type,
+        'manufacturer_unknown': mobo_manufacturer_unknown,
     })
 
 
