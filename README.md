@@ -1,3 +1,20 @@
+### TechReadOut 3.6.0
+
+Added:
+- New dedicated motherboard spec lookup chain: ASUS official site → Newegg → Amazon (niche/clone brands only) → Open WebUI fallback.
+- Newegg motherboard parser reads the page's embedded JSON state directly, avoiding the need for headless rendering.
+- ASUS official site parser extracts spec data from the page's embedded data blocks.
+
+Changed:
+- Amazon motherboard lookups rescoped to niche/clone brands only (Machinist, Huananzhi, Jingyue); general-brand motherboards no longer use Amazon as a source, since its listings are too sparse to be reliable.
+- Source trust score for Newegg set to 85, ranking between Amazon (74) and manufacturer sites (95).
+- `search_motherboard()` retired as a no-op, kept only for `api.py` backward compatibility (same pattern as `use_intel_ark`/`use_amd_official`).
+
+Known issues / in progress:
+- MSI and Gigabyte official-site parsers have been validated but are not yet wired into the motherboard lookup chain.
+- No live Scrape.Do round-trip test has been completed for the new chain yet.
+- No fixture tests added for the new parsers (`tests/` directory not yet present in the repo).
+
 ### TechReadOut 3.5.7
 
 - Review match modal now updates selection state reliably, auto-selects the top-ranked candidate, and warns when a candidate has no saved spec ID.
@@ -28,7 +45,7 @@ Migration:
 - Run `migrations/v3.5.4_ram_ecc.sql` against existing databases.
 
 
-**v3.5.3** — Hardware inventory and spec tracking for homelabs and IT environments.
+**v3.6.0** — Hardware inventory and spec tracking for homelabs and IT environments.
 
 TechReadout is a self-hosted Flask web application for tracking hardware inventory, managing host builds, looking up component specs from multiple sources, and analyzing your hardware library over time.
 
@@ -46,7 +63,9 @@ TechReadout is a self-hosted Flask web application for tracking hardware invento
 
 ### Spec Lookup
 - Seed database: ships with a curated library of common hardware (CPUs, GPUs, RAM, motherboards, storage, PSUs, coolers, cases, fans, NICs) — most lookups resolve here instantly and for free
-- On-demand fallback chain: Scrape.Do (paid) → Open WebUI (optional, self-hosted LLM) → AI Import (manual)
+- General fallback chain: Scrape.Do (paid) → Open WebUI (optional, self-hosted LLM) → AI Import (manual)
+- Motherboard-specific lookup chain: ASUS official site → Newegg → Amazon (niche/clone brands only: Machinist, Huananzhi, Jingyue) → Open WebUI fallback
+  - MSI and Gigabyte official-site parsers exist and have been validated, but are not yet wired into this chain
 - Confidence-scored matching with human review modal for matches below 90%
 - Open WebUI results are never auto-accepted — always routed to the Pending Review queue regardless of score
 - AI Import fallback via `/backup/import-specs` for anything the chain misses
@@ -81,7 +100,7 @@ TechReadout is a self-hosted Flask web application for tracking hardware invento
 
 - **Backend:** Python 3.12, Flask, SQLAlchemy, Flask-Migrate
 - **Frontend:** Bootstrap 5.3, Bootstrap Icons, Chart.js (dashboard only)
-- **Scraping:** BeautifulSoup4, Requests, Scrape.Do (optional paid fallback)
+- **Scraping:** BeautifulSoup4, Requests, Scrape.Do (paid fallback, used for general lookups and as part of niche-source fallbacks)
 - **Database:** MariaDB 11
 - **Deployment:** Docker + Docker Compose
 
@@ -144,7 +163,7 @@ The eBay API is used to fetch median used-market price estimates for inventory i
 
 ### Open WebUI (optional)
 
-Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open WebUI](https://github.com/open-webui/open-webui)'s OpenAI-compatible endpoint) to guess specs when Scrape.Do doesn't find a match. It runs before manual AI Import, and every result it returns is routed to the Pending Review queue for a human check — it's never auto-accepted, no matter how confident the match looks.
+Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open WebUI](https://github.com/open-webui/open-webui)'s OpenAI-compatible endpoint) to guess specs when the earlier chain steps don't find a match. It runs before manual AI Import, and every result it returns is routed to the Pending Review queue for a human check — it's never auto-accepted, no matter how confident the match looks.
 
 1. Stand up Open WebUI (with Ollama or another backend) on any machine reachable from your Docker host.
 2. In Open WebUI, go to **Settings → Account → API Keys** and generate a token.
@@ -157,6 +176,33 @@ Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open We
 ---
 
 ## Changelog
+
+### v3.6.0
+- **Dedicated motherboard lookup chain** — motherboards now resolve through ASUS official site → Newegg → Amazon (niche/clone brands only) → Open WebUI, instead of the general Scrape.Do chain.
+- **Newegg motherboard parser** — reads the page's embedded JSON state directly; no headless rendering required.
+- **ASUS official site parser** — extracts spec data from the page's embedded data blocks.
+- **Amazon rescoped for motherboards** — limited to niche/clone brands (Machinist, Huananzhi, Jingyue) where it's the only available source; general-brand motherboards skip Amazon entirely due to sparse listings.
+- **Source trust scoring** — Newegg added at a trust score of 85, between Amazon (74) and manufacturer sites (95).
+- **`search_motherboard()` retired** as a no-op, kept only for `api.py` backward compatibility.
+- MSI and Gigabyte official-site parsers built and validated, pending integration into the chain.
+
+### v3.5.7
+- Review match modal now updates selection state reliably, auto-selects the top-ranked candidate, and warns when a candidate has no saved spec ID.
+- Auto-accept now requires `validate_result()` to confirm the match, so fuzzy recall can't auto-accept a similar-but-wrong part (e.g. a different Xeon SKU).
+- Scrape.Do TechPowerUp lookups now pass `render=true` so JS-rendered spec pages resolve reliably.
+
+### v3.5.5
+- AI JSON Import templates now request exactly one hardware item and one JSON object.
+- JSON arrays are rejected by both browser validation and server-side import.
+- Open WebUI integration explicitly requests one item and rejects non-object responses.
+- Unknown values remain `null`; the AI/LLM must not guess.
+
+### v3.5.4
+- **RAM ECC/non-ECC tracking** via `ram_ecc`.
+- **RAM module type tracking** via `ram_module_type` for UDIMM/RDIMM/LRDIMM/SODIMM.
+- RAM display summaries/details now include ECC and module type when known.
+- AI/scraper RAM prompts now require unknown ECC/module type values to be returned as null.
+- Migration: run `migrations/v3.5.4_ram_ecc.sql` against existing databases.
 
 ### v3.5.3
 - **Centralized app version** — dashboard and lower-right badge now use one shared version source in `app/version.py`.
@@ -234,7 +280,7 @@ app/
 │   ├── planner.py      — Build planner
 │   └── backup.py       — Backup, restore, AI import
 ├── scrapers/
-│   └── lookup.py       — BS4 direct + Scrape.Do fallback chain
+│   └── lookup.py       — BS4 direct + Scrape.Do fallback chain, plus dedicated motherboard chain (ASUS/Newegg/Amazon)
 ├── seeds/
 │   ├── seed_db.py      — Seed importer (runs on container startup)
 │   └── *.json          — Curated hardware spec library (10 component types)
