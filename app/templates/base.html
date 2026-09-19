@@ -147,6 +147,11 @@
                 </a>
             </li>
             <li class="nav-item">
+                <a class="nav-link {% if request.endpoint == 'stats.stats' %}active{% endif %}" href="{{ url_for('stats.stats') }}">
+                    <i class="bi bi-bar-chart"></i> Inventory Breakdown
+                </a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link {% if request.endpoint == 'scraper.index' %}active{% endif %}" href="{{ url_for('scraper.index') }}">
                     <i class="bi bi-search"></i> Spec Lookup
                 </a>

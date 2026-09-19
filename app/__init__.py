@@ -57,11 +57,12 @@ def create_app():
         db.session.commit()
     
     # Register blueprints
-    from app.routes import main, api, scraper, planner, backup
+    from app.routes import main, api, scraper, planner, backup, stats
     app.register_blueprint(main.bp)
     app.register_blueprint(api.bp, url_prefix='/api')
     app.register_blueprint(scraper.bp, url_prefix='/scraper')
     app.register_blueprint(planner.bp, url_prefix='/planner')
     app.register_blueprint(backup.bp, url_prefix='/backup')
+    app.register_blueprint(stats.bp)
     
     return app

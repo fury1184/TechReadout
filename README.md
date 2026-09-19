@@ -1,34 +1,6 @@
-### TechReadOut 3.5.7
-
-- Review match modal now updates selection state reliably, auto-selects the top-ranked candidate, and warns when a candidate has no saved spec ID.
-- Auto-accept now requires `validate_result()` to confirm the match, so fuzzy recall can't auto-accept a similar-but-wrong part (e.g. a different Xeon SKU).
-- Scrape.Do TechPowerUp lookups now pass `render=true` so JS-rendered spec pages resolve reliably.
-
-### TechReadOut 3.5.5
-
-- AI JSON Import templates now request exactly one hardware item and one JSON object.
-- JSON arrays are rejected by both browser validation and server-side import.
-- Open WebUI integration explicitly requests one item and rejects non-object responses.
-- Unknown values remain `null`; the AI/LLM must not guess.
-
 # TechReadout
 
-### TechReadOut 3.5.4
-
-Added:
-- RAM ECC/non-ECC tracking via `ram_ecc`.
-- RAM module type tracking via `ram_module_type` for UDIMM/RDIMM/LRDIMM/SODIMM.
-- RAM display summaries/details now include ECC and module type when known.
-- AI/scraper RAM prompts now require unknown ECC/module type values to be returned as null.
-
-Changed:
-- App version updated to 3.5.4.
-
-Migration:
-- Run `migrations/v3.5.4_ram_ecc.sql` against existing databases.
-
-
-**v3.5.3** — Hardware inventory and spec tracking for homelabs and IT environments.
+**v3.7.0** — Hardware inventory and spec tracking for homelabs and IT environments.
 
 TechReadout is a self-hosted Flask web application for tracking hardware inventory, managing host builds, looking up component specs from multiple sources, and analyzing your hardware library over time.
 
@@ -46,8 +18,10 @@ TechReadout is a self-hosted Flask web application for tracking hardware invento
 
 ### Spec Lookup
 - Seed database: ships with a curated library of common hardware (CPUs, GPUs, RAM, motherboards, storage, PSUs, coolers, cases, fans, NICs) — most lookups resolve here instantly and for free
-- On-demand fallback chain: Scrape.Do (paid) → Open WebUI (optional, self-hosted LLM) → AI Import (manual)
+- On-demand fallback chain: manufacturer official site (ASUS) → Newegg → Amazon (scoped to niche/clone motherboard brands) → Scrape.Do/TechPowerUp (paid) → Open WebUI (optional, self-hosted LLM) → AI Import (manual)
+- Optional manufacturer field on lookup as a non-blocking nudge when a query alone can't resolve
 - Confidence-scored matching with human review modal for matches below 90%
+- Closing the review modal without picking a candidate now falls back to manual entry + AI Import on the main form instead of leaving no path forward
 - Open WebUI results are never auto-accepted — always routed to the Pending Review queue regardless of score
 - AI Import fallback via `/backup/import-specs` for anything the chain misses
 - Lookup cache with 30-day TTL; manageable via the Lookup Cache page
@@ -65,10 +39,17 @@ TechReadout is a self-hosted Flask web application for tracking hardware invento
 - Recently added items
 - Pending review queue count with direct link
 
+### Inventory Breakdown
+- Dedicated `/stats` page showing your owned inventory grouped by the fields that matter most per component type: CPU by socket/manufacturer, Motherboard by socket/chipset, RAM by type/capacity, GPU by manufacturer/VRAM, Storage by interface/capacity, PSU by wattage, Case by form factor
+- Counts reflect physical unit quantity (a 2×8GB RAM kit counts as 2), not row count
+- Known messy spec variants (e.g. `LGA 2011-3` vs `LGA 2011-v3`) are normalized before grouping so they don't split into separate rows
+- Custom/manual inventory entries with no matched spec are rolled into an "Unknown / custom entry" row so totals always match your actual inventory count
+
 ### Review Queue
 - Scrape matches below the 90% confidence threshold are automatically saved to the review queue
 - Review, accept, or skip candidates from a dedicated queue page
 - Badge in sidebar shows live pending count
+- Save-time dedup now compares normalized query text (lowercase, collapsed whitespace) so a retry like "gt 730" after "MSI GT 730" doesn't spawn a second queue entry for the same item
 
 ### Lookup Cache Management
 - Browse all cached lookups with hit/miss status and age
@@ -158,6 +139,50 @@ Open WebUI is an automatic lookup step that asks a self-hosted LLM (via [Open We
 
 ## Changelog
 
+### v3.7.0
+- **Inventory Breakdown page** — new `/stats` page groups owned inventory by socket, chipset, type, capacity, manufacturer, VRAM, interface, wattage, and form factor per component type. Counts sum physical unit quantity, not row count.
+- **Socket value normalization** — known messy variants (e.g. `LGA 2011-3` vs `LGA 2011-v3`) are merged before grouping on the breakdown page.
+- **Fixed:** Manual Entry Mode on the Add Inventory page no longer persists across page loads via `localStorage` — it previously carried over silently between sessions and could cause a lookup to be skipped with no indication why.
+- **Fixed:** closing the low-confidence review modal (Cancel or X) without selecting a candidate used to leave a frozen "please review" banner with no way forward. It now falls back to showing manual entry and the AI Import suggestion on the main form.
+- **Fixed:** review queue dedup (`review_save`) now compares normalized query text instead of an exact string match, so near-identical retries of the same lookup collapse into one pending entry instead of creating a duplicate that looks "stuck" after the first is skipped or accepted.
+
+### v3.6.0
+- **Motherboard lookup chain overhaul** — new fallback order: manufacturer official site (ASUS, via embedded `__NUXT_DATA__` JSON) → Newegg (via embedded `window.__initialState__` JSON, trust score 85) → Amazon (scoped to niche/clone brands only: Machinist, Huananzhi, Jingyue, with `render=true`) → Scrape.Do/TechPowerUp → Open WebUI.
+- **Optional manufacturer field** added to the lookup API and Add Inventory form as a non-blocking nudge when a query alone doesn't resolve.
+- **`search_motherboard()` retired** as a no-op, following the same backward-compat pattern as `use_intel_ark`/`use_amd_official`.
+- **NAS backup path** moved from env-var-only to a DB-backed `AppSetting`, editable directly from the Backup page — no redeploy needed to change it.
+- **Fixed:** CSV export was returning `jsonify()` instead of a real `.csv`/`.zip` file.
+- **New `/backup/export-json`** direct-download route.
+- **Fixed:** sidebar scroll bug via `display: flex; flex-direction: column; overflow-y: auto` plus `margin-top: auto`.
+- MSI and Gigabyte official-site parsers validated but not yet wired into the lookup chain.
+
+### v3.5.7
+
+- Review match modal now updates selection state reliably, auto-selects the top-ranked candidate, and warns when a candidate has no saved spec ID.
+- Auto-accept now requires `validate_result()` to confirm the match, so fuzzy recall can't auto-accept a similar-but-wrong part (e.g. a different Xeon SKU).
+- Scrape.Do TechPowerUp lookups now pass `render=true` so JS-rendered spec pages resolve reliably.
+
+### v3.5.5
+
+- AI JSON Import templates now request exactly one hardware item and one JSON object.
+- JSON arrays are rejected by both browser validation and server-side import.
+- Open WebUI integration explicitly requests one item and rejects non-object responses.
+- Unknown values remain `null`; the AI/LLM must not guess.
+
+### v3.5.4
+
+Added:
+- RAM ECC/non-ECC tracking via `ram_ecc`.
+- RAM module type tracking via `ram_module_type` for UDIMM/RDIMM/LRDIMM/SODIMM.
+- RAM display summaries/details now include ECC and module type when known.
+- AI/scraper RAM prompts now require unknown ECC/module type values to be returned as null.
+
+Changed:
+- App version updated to 3.5.4.
+
+Migration:
+- Run `migrations/v3.5.4_ram_ecc.sql` against existing databases.
+
 ### v3.5.3
 - **Centralized app version** — dashboard and lower-right badge now use one shared version source in `app/version.py`.
 - **Duplicate detection** — add-inventory form now warns about similar existing specs and inventory rows before saving.
@@ -232,7 +257,8 @@ app/
 │   ├── api.py          — Lookup API endpoints
 │   ├── scraper.py      — Spec lookup info & settings
 │   ├── planner.py      — Build planner
-│   └── backup.py       — Backup, restore, AI import
+│   ├── backup.py       — Backup, restore, AI import
+│   └── stats.py        — Inventory Breakdown page
 ├── scrapers/
 │   └── lookup.py       — BS4 direct + Scrape.Do fallback chain
 ├── seeds/
@@ -241,6 +267,7 @@ app/
 └── templates/
     ├── base.html
     ├── dashboard.html
+    ├── stats.html
     ├── inventory/
     ├── hosts/
     ├── specs/

@@ -1454,10 +1454,21 @@ def review_save():
     if not query_str or not component_type:
         return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
 
-    # Avoid duplicate pending entries for the same query+type
-    existing = db.session.query(PendingReview).filter_by(
-        query=query_str, component_type=component_type, status='Pending'
-    ).first()
+    # Avoid duplicate pending entries for the same query+type. Compare on a
+    # normalized form (lowercase, collapsed whitespace) — the same
+    # normalization LookupCache already uses for its own dedup — so
+    # near-identical retries ("MSI GT 730" vs "gt 730") collapse into the
+    # same pending row instead of spawning a second one that looks stuck
+    # after the first gets skipped/accepted. The stored query keeps its
+    # original casing/wording for display; only the comparison is normalized.
+    normalized_query = LookupCache.normalize_query(query_str)
+    pending_same_type = db.session.query(PendingReview).filter_by(
+        component_type=component_type, status='Pending'
+    ).all()
+    existing = next(
+        (r for r in pending_same_type if LookupCache.normalize_query(r.query) == normalized_query),
+        None,
+    )
 
     if not existing:
         review = PendingReview(

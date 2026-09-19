@@ -66,6 +66,7 @@ python -m app.seeds.seed_db --check    # Show current vs available seed version
 - `routes/scraper.py` (`/scraper`) — lookup source info & **Lookup Settings** (toggles for Scrape.Do depth, eBay, Open WebUI).
 - `routes/planner.py` (`/planner`) — build planner.
 - `routes/backup.py` (`/backup`) — backup/restore, Excel/CSV export, and **AI Import** (manual spec import + JSON import).
+- `routes/stats.py` (`/`) — Inventory Breakdown page; groups owned inventory by socket/chipset/type/capacity/etc. per component type.
 
 ### The spec lookup chain (core concept)
 Lookup is a fallback chain, orchestrated across two layers. `app/routes/api.py:lookup_hardware` (the `/api/lookup` endpoint) is the orchestrator; `app/scrapers/lookup.py:lookup_hardware` is only the web-scraper step.
@@ -73,7 +74,7 @@ Lookup is a fallback chain, orchestrated across two layers. `app/routes/api.py:l
 Order of resolution:
 1. **Local DB / seed search** — done *in api.py* (Strategies 1–4: exact, contains, contained-in, fuzzy word overlap). The seed database (~258 curated specs from `app/seeds/*.json`) lives in `hardware_specs`, so most lookups resolve here for free.
 2. **Lookup cache** (`lookup_cache` table, 30-day TTL) — a recorded `miss` short-circuits the scraper only when there are also no DB candidates.
-3. **Web scraper** — `app/scrapers/lookup.py:lookup_hardware`: Scrape.Do (paid) against TechPowerUp / Intel ARK / Amazon depending on component type, then **Open WebUI** (optional self-hosted LLM) as the last automatic step.
+3. **Web scraper** — `app/scrapers/lookup.py:lookup_hardware`: for motherboards, manufacturer official site (ASUS, via `__NUXT_DATA__` JSON) → Newegg (via `window.__initialState__` JSON) → Amazon (scoped to niche/clone brands only: Machinist, Huananzhi, Jingyue) are tried first; for all component types, Scrape.Do (paid) against TechPowerUp/Intel ARK is the fallback; then **Open WebUI** (optional self-hosted LLM) as the last automatic step.
 4. **Manual AI Import** (`/backup/import-specs`) — for anything the chain misses.
 
 Confidence gating (in `api.py`, constants `REVIEW_THRESHOLD = 90`, `OPENWEBUI_CONFIDENCE_CAP = 89`):

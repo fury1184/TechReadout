@@ -616,19 +616,16 @@ let _reviewCandidates = [];
 let _reviewQuery = '';
 let _reviewCtName = '';
 
-// ── Manual mode persistence ───────────────────────────────────────────────
-if (localStorage.getItem('techreadout_manual_mode') === 'true') {
-    manualModeToggle.checked = true;
-    enableManualMode();
-}
-
+// ── Manual mode: session-only, never persisted ─────────────────────────────
+// Deliberately does NOT remember state across page loads/sessions — manual
+// mode silently carrying over caused a real GPU entry to skip spec lookup
+// with no error shown. Always starts off; the toggle only affects this page
+// load.
 manualModeToggle.addEventListener('change', function() {
     if (this.checked) {
         enableManualMode();
-        localStorage.setItem('techreadout_manual_mode', 'true');
     } else {
         disableManualMode();
-        localStorage.setItem('techreadout_manual_mode', 'false');
     }
 });
 
@@ -1161,7 +1158,23 @@ function showReviewModal(candidates, query, ctName) {
     // immediately and the button/state cannot become visually out of sync.
     if (candidates.length > 0) selectCandidate(0);
 
-    if (!_reviewModal) _reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
+    if (!_reviewModal) {
+        const modalEl = document.getElementById('reviewModal');
+        _reviewModal = new bootstrap.Modal(modalEl);
+        // If the modal closes (Cancel, X, or a failed confirm) without a
+        // spec actually being applied, fall back to the same next-steps UX
+        // as a lookup with no matches at all. Without this, closing the
+        // modal left a frozen "please review below" banner with no way
+        // forward except manually toggling Manual Entry Mode.
+        modalEl.addEventListener('hidden.bs.modal', function() {
+            if (!hardwareSpecId.value) {
+                manualEntryMode = true;
+                showManualSpecs(true);
+                showStatus('No spec applied — enter specs manually below or try AI Import.', 'warning');
+                showAiImport(_reviewQuery, _reviewCtName);
+            }
+        });
+    }
     _reviewModal.show();
 }
 
