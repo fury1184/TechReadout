@@ -68,14 +68,30 @@ VALUE_ALIASES = {
         "LGA2011-3": "LGA 2011-3",
         "LGA2011-V3": "LGA 2011-3",
         "LGA2011": "LGA 2011",
+        "LGA1151": "LGA 1151",
+    },
+    "mobo_chipset": {
+        "Intel Z390": "Z390",
+        "Intel X99": "X99",
+        "Intel X79": "X79",
+        "Intel Z370": "Z370",
     },
 }
 
 
 def _normalize_value(field_name, value):
     aliases = VALUE_ALIASES.get(field_name)
-    if aliases and value in aliases:
+    if not aliases or value is None:
+        return value
+    if value in aliases:
         return aliases[value]
+    # Case-insensitive fallback: catches casing variants (e.g. "LGA2011-v3"
+    # vs the already-mapped "LGA2011-V3") without needing a separate entry
+    # for every casing seen in the wild.
+    lowered = value.lower()
+    for variant, canonical in aliases.items():
+        if variant.lower() == lowered:
+            return canonical
     return value
 
 
