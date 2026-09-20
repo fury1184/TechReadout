@@ -61,11 +61,13 @@ VALUE_ALIASES = {
         "LGA 2011-v3": "LGA 2011-3",
         "LGA2011-3": "LGA 2011-3",
         "LGA2011-V3": "LGA 2011-3",
+        "LGA2011": "LGA 2011",
     },
     "mobo_socket": {
         "LGA 2011-v3": "LGA 2011-3",
         "LGA2011-3": "LGA 2011-3",
         "LGA2011-V3": "LGA 2011-3",
+        "LGA2011": "LGA 2011",
     },
 }
 

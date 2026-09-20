@@ -64,6 +64,45 @@ def normalize_manufacturer(manufacturer: Optional[str]) -> Optional[str]:
     return text
 
 
+_LGA_SOCKET_RE = re.compile(
+    r"(?i)^lga\s*-?\s*(\d{3,4})"      # "LGA" + socket number, any spacing/dash
+    r"(?:\s*-?\s*v?(\d+))?"           # optional generation suffix: -3, -v3, v3
+    r"\s*(\(.*\))?$"                  # optional parenthetical, e.g. "(300 Series)"
+)
+
+
+def normalize_socket(socket: Optional[str]) -> Optional[str]:
+    """Canonicalize a CPU/motherboard socket name for consistent storage.
+
+    Conservative and LGA-focused: unifies the spacing/casing/dash variants
+    actually seen in scraped and seed data, e.g. "LGA1151" / "LGA 1151" ->
+    "LGA 1151"; "LGA2011-V3" / "LGA2011-v3" / "LGA 2011-v3" -> "LGA 2011-3".
+    A trailing parenthetical such as "(300 Series)" is kept as-is — it marks
+    a real electrical-spec distinction (300-series boards aren't compatible
+    with earlier Skylake/Kaby Lake LGA1151 boards despite the same physical
+    socket), not a formatting variant, so it must never be merged away.
+
+    Values that don't match a known LGA pattern (AM4, AM5, sTRX4, FM2+, ...)
+    are returned with whitespace only collapsed, otherwise unchanged, so
+    socket families not yet seen in the wild aren't mangled by a guess.
+    """
+    text = _clean_space(socket)
+    if not text:
+        return None
+
+    match = _LGA_SOCKET_RE.match(text)
+    if not match:
+        return text
+
+    number, generation, suffix = match.groups()
+    canonical = f"LGA {number}"
+    if generation:
+        canonical += f"-{generation}"
+    if suffix:
+        canonical += f" {_clean_space(suffix)}"
+    return canonical
+
+
 def _vendor_tokens(manufacturer: Optional[str]) -> list[str]:
     text = normalize_manufacturer(manufacturer) or ""
     return [

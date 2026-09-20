@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import re
+from sqlalchemy import event
 from app import db
 
 
@@ -146,6 +147,23 @@ class HardwareSpec(db.Model):
     def detail_rows(self):
         from app.serializers.hardware import detail_rows
         return detail_rows(self)
+
+
+@event.listens_for(HardwareSpec, 'before_insert')
+@event.listens_for(HardwareSpec, 'before_update')
+def _normalize_hardware_spec_sockets(mapper, connection, target):
+    """Canonicalize cpu_socket/mobo_socket on every save, regardless of
+    source (scraper result, seed import, manual add/edit form, backup
+    import). This is the single choke point for socket normalization —
+    individual scrapers/importers do NOT need their own normalization
+    logic; whatever they write gets canonicalized here before it hits the
+    database. See app.name_normalization.normalize_socket for the rules.
+    """
+    from app.name_normalization import normalize_socket
+    if target.cpu_socket:
+        target.cpu_socket = normalize_socket(target.cpu_socket)
+    if target.mobo_socket:
+        target.mobo_socket = normalize_socket(target.mobo_socket)
 
 
 class AppSetting(db.Model):
