@@ -65,8 +65,20 @@ def inventory_list():
     status = request.args.get('status')
     assigned = request.args.get('assigned')
     show_all = request.args.get('show_all')  # Include sold/disposed
+    q = request.args.get('q', '').strip()
     
     query = Inventory.query
+    
+    if q:
+        search_term = f'%{q}%'
+        query = query.outerjoin(HardwareSpec).filter(
+            db.or_(
+                HardwareSpec.model.ilike(search_term),
+                HardwareSpec.manufacturer.ilike(search_term),
+                Inventory.custom_name.ilike(search_term),
+                Inventory.custom_manufacturer.ilike(search_term),
+            )
+        )
     
     if component_type:
         ct = ComponentType.query.filter_by(name=component_type).first()
@@ -96,6 +108,7 @@ def inventory_list():
                          current_type=component_type,
                          current_status=status,
                          current_assigned=assigned,
+                         current_query=q,
                          show_all=show_all,
                          sold_count=sold_count)
 
@@ -107,8 +120,20 @@ def inventory_export():
     status = request.args.get('status')
     assigned = request.args.get('assigned')
     show_all = request.args.get('show_all')
+    q = request.args.get('q', '').strip()
 
     query = Inventory.query
+
+    if q:
+        search_term = f'%{q}%'
+        query = query.outerjoin(HardwareSpec).filter(
+            db.or_(
+                HardwareSpec.model.ilike(search_term),
+                HardwareSpec.manufacturer.ilike(search_term),
+                Inventory.custom_name.ilike(search_term),
+                Inventory.custom_manufacturer.ilike(search_term),
+            )
+        )
 
     if component_type:
         ct = ComponentType.query.filter_by(name=component_type).first()

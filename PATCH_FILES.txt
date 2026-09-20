@@ -1,80 +1,66 @@
-TechReadOut v3.7.0 — Inventory Breakdown + lookup-flow fixes
+TechReadOut v3.8.1 — Inventory search box + CPU-Monkey lookup fix
 ================================================================
 
 Files in this patch (paths relative to repo root):
 
-  app/routes/stats.py               NEW — /stats Inventory Breakdown page.
-                                     Groups owned inventory by socket, chipset,
-                                     type, capacity, manufacturer, VRAM,
-                                     interface, wattage, and form factor per
-                                     component type. Sums Inventory.quantity
-                                     (not row count). Normalizes known messy
-                                     socket variants (e.g. "LGA 2011-3" vs
-                                     "LGA 2011-v3") before grouping via
-                                     VALUE_ALIASES — a display-time patch;
-                                     the underlying hardware_specs data is
-                                     untouched. Custom inventory entries with
-                                     no resolved hardware_spec_id are rolled
-                                     into an "Unknown / custom entry" row.
+  app/routes/main.py                inventory_list() and inventory_export()
+                                     both gained a `q` query param. When
+                                     present, results are filtered (case-
+                                     insensitive partial match) against
+                                     HardwareSpec.model, HardwareSpec.
+                                     manufacturer, Inventory.custom_name, and
+                                     Inventory.custom_manufacturer via an
+                                     outerjoin — covers both catalog and
+                                     manually-entered custom items. ANDs with
+                                     the existing Component Type / Status /
+                                     Assignment filters rather than replacing
+                                     them; CSV export now respects an active
+                                     search the same way it already respects
+                                     the other filters. inventory_list() also
+                                     passes current_query=q to the template so
+                                     the entered value survives reloads.
 
-  app/templates/stats.html          NEW — template for the above.
+  app/templates/inventory/list.html Adds a full-width Search input as its own
+                                     row at the top of the existing filter
+                                     <form>, above Component Type / Status /
+                                     Assignment, so it submits and combines
+                                     with them automatically. Placeholder
+                                     example text ("i5, 3060, ASUS") hints at
+                                     partial-match behavior.
 
-  app/__init__.py                   Registers the new stats blueprint
-                                     (no url_prefix, matches main.bp).
+  app/scrapers/lookup.py            Fixed _cpu_monkey_slug() building a
+                                     malformed CPU-Monkey URL (duplicate
+                                     "intel", e.g. cpu-intel_core_intel_i5_
+                                     2500k instead of cpu-intel_core_i5_2500k)
+                                     whenever the incoming query already
+                                     contained a leading "intel " token — e.g.
+                                     a combined manufacturer+model query like
+                                     "intel i5-2500k" from the Add Item form's
+                                     manufacturer field. The family-prefix
+                                     inserts ("core "/"xeon ") ran before the
+                                     startswith('intel ') check, pushing an
+                                     existing "intel " out of position and
+                                     causing it to be re-added a second time.
+                                     Same bug class would have hit Xeon
+                                     queries too (e.g. "intel e5-2680v4" ->
+                                     "intel xeon intel e5-2680v4"). Fix strips
+                                     any leading "intel" up front and re-adds
+                                     it exactly once after the family-prefix
+                                     logic runs. Root-caused via a live
+                                     "i5-2500K" lookup that missed Intel ARK
+                                     (separate/unrelated miss) and then hit
+                                     this bug on the CPU-Monkey fallback,
+                                     returning a 404.
 
-  app/templates/base.html           Adds "Inventory Breakdown" sidebar link
-                                     pointing at stats.stats.
-
-  app/templates/inventory/add.html  - Manual Entry Mode no longer persists via
-                                       localStorage across page loads. It was
-                                       silently carrying over between sessions
-                                       and could cause a lookup to be skipped
-                                       with no error shown. Now always starts
-                                       unchecked; the toggle only affects the
-                                       current page view.
-                                     - Closing the low-confidence review modal
-                                       (Cancel or X) without picking a
-                                       candidate used to leave a frozen
-                                       "please review below" banner with no
-                                       way forward. A new hidden.bs.modal
-                                       listener now falls back to showing
-                                       manual entry + the AI Import
-                                       suggestion on the main form when no
-                                       spec was applied.
-
-  app/routes/main.py                review_save() dedup now compares
-                                     LookupCache.normalize_query() (lowercase,
-                                     collapsed whitespace) instead of an exact
-                                     string match, so a retry like "gt 730"
-                                     after an earlier "MSI GT 730" collapses
-                                     into the same pending row instead of
-                                     spawning a duplicate that looks "stuck"
-                                     after the first is skipped/accepted.
-                                     Stored/displayed query text is unchanged
-                                     — only the comparison is normalized.
-                                     Existing near-duplicate rows already in
-                                     the queue are NOT retroactively merged;
-                                     this only affects new saves going
-                                     forward, per request.
-
-  app/version.py                    APP_VERSION bumped 3.6.1 -> 3.7.0.
-
-  README.md                         Changelog, Features, and Project
-                                     Structure sections updated for v3.7.0
-                                     and (retroactively) v3.6.0. Also
-                                     consolidated three ad-hoc version blurbs
-                                     that had been prepended above the title
-                                     instead of living in the Changelog
-                                     section — no content changed, just
-                                     relocated to their chronological slot.
+  app/version.py                    APP_VERSION bumped 3.7.0 -> 3.8.1
+                                     (3.8.0 search feature + 3.8.1 lookup fix
+                                     combined into a single release).
 
 To apply: copy all files above over the matching paths in your working tree.
-No rebuild needed — the ./app bind mount picks up template/route changes,
-and Flask's debug reloader restarts the dev server automatically on save
-(needed here since app/__init__.py changes which blueprints are registered
-at process start).
+No rebuild needed — the ./app bind mount picks up route/template changes,
+and Flask's debug reloader restarts the dev server automatically on save.
 
-Not included in this patch: the docker-compose.yml volumes: entry for
-mounting Core-One's SMB share (host-specific, applied directly on Locust)
-and any cleanup of pre-existing duplicate PendingReview rows in the queue
-(explicitly deferred — only new saves are deduped going forward).
+Not included in this patch: no changes to the Intel ARK search step itself
+(the miss seen in testing appears to be a separate ARK search-result/parsing
+issue, not yet diagnosed) and no retroactive re-lookup of any inventory items
+that were previously imported with unresolved specs due to this bug.

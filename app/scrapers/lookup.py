@@ -502,14 +502,20 @@ def _cpu_monkey_slug(query: str) -> Optional[str]:
     amd = _is_amd_cpu_query(value) and not intel
 
     if intel:
+        # Strip any leading "intel" the caller already included (e.g. a
+        # combined manufacturer+model query like "intel i5-2500k") so it
+        # doesn't get pushed out of position by the family-prefix inserts
+        # below and duplicated when re-added at the end.
+        value = re.sub(r'^intel\s+', '', value)
+
         # CPU-Monkey uses vendor/family prefixes in its slugs. Add them when
         # the user enters a compact Intel model such as e5-2696v4 or i9-9900k.
         if re.search(r'\be[357]\s*[- ]?\s*\d{4}', value) and 'xeon' not in value:
             value = 'xeon ' + value
         if re.search(r'\bi[3579]\s*[- ]?\s*\d{4,5}', value) and 'core' not in value:
             value = 'core ' + value
-        if not value.startswith('intel '):
-            value = 'intel ' + value
+
+        value = 'intel ' + value
 
         # Split compact Xeon revisions (e5-2696v4 -> e5 2696 v4).
         value = re.sub(r'\b(e[357])\s*[- ]?\s*(\d{4})([a-z]?)\s*v\s*(\d+)\b',
