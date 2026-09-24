@@ -245,9 +245,15 @@ def extract_part_number(model: Optional[str]) -> Optional[str]:
     candidates = []
     for token in tokens:
         upper = token.upper().strip(".,")
-        if re.fullmatch(r"DDR[345]-?\d+", upper):
+        # JEDEC speed/module ratings identify a speed grade shared by every
+        # capacity and vendor, never a specific part.  Covers DDR3L-1600,
+        # DDR4-3200R, PC3-14900R, PC3L-12800R, PC4-2400T-R and full label
+        # strings like PC3-12800R-11-12-E2 / PC4-2666V-RB2.  (v3.8.7: the old
+        # PC\d+(-\d+)? pattern missed the R/U/E suffix, so PC3-14900R was
+        # treated as a part number and 8GB/16GB sticks canonicalized together.)
+        if re.fullmatch(r"DDR[2-5]L?-?\d+[A-Z]?", upper):
             continue
-        if re.fullmatch(r"PC\d+(?:-\d+)?", upper):
+        if re.fullmatch(r"PC\d+[LU]?-\d+[A-Z]{0,2}(?:-[A-Z0-9]{1,4})*", upper):
             continue
         has_alpha = bool(re.search(r"[A-Z]", upper))
         has_digit = bool(re.search(r"\d", upper))
@@ -264,6 +270,27 @@ def extract_part_number(model: Optional[str]) -> Optional[str]:
         return None
     candidates.sort(reverse=True)
     return candidates[0][1]
+
+
+_RAM_KIT_RE = re.compile(r"\b(\d+)\s*[x×]\s*(\d+)\s*GB\b", re.IGNORECASE)
+_RAM_SIZE_RE = re.compile(r"\b(\d+)\s*GB\b", re.IGNORECASE)
+
+
+def extract_ram_capacity(model: Optional[str]) -> Optional[tuple[int, int]]:
+    """Return (module_count, gb_per_module) parsed from a RAM model string.
+
+    "2x8GB ..." -> (2, 8); "16GB 2Rx4 PC3-14900R" -> (1, 16).  Returns None
+    when no capacity is written, so callers can treat it as unknown rather
+    than as a mismatch.
+    """
+    text = model or ""
+    kit = _RAM_KIT_RE.search(text)
+    if kit:
+        return int(kit.group(1)), int(kit.group(2))
+    size = _RAM_SIZE_RE.search(text)
+    if size:
+        return 1, int(size.group(1))
+    return None
 
 
 def comparison_key(manufacturer: Optional[str], model: Optional[str]) -> str:
@@ -299,6 +326,12 @@ def choose_existing_canonical_name(
     is_cpu = (component_type or "").casefold() == "cpu"
     cpu_identity = extract_cpu_identity(clean_model) if is_cpu else None
 
+    # RAM capacity is part of the identity: an 8GB and a 16GB stick of the
+    # same speed grade (or even the same part-number family) are different
+    # parts.  Only enforced when both names state a capacity.
+    is_ram = (component_type or "").casefold() == "ram"
+    ram_capacity = extract_ram_capacity(clean_model) if is_ram else None
+
     best = None
     best_score = -1
     for candidate in candidates:
@@ -311,6 +344,11 @@ def choose_existing_canonical_name(
         if is_cpu and cpu_identity is not None:
             candidate_cpu_identity = extract_cpu_identity(cand_model)
             if candidate_cpu_identity is not None and candidate_cpu_identity != cpu_identity:
+                continue
+
+        if is_ram and ram_capacity is not None:
+            candidate_capacity = extract_ram_capacity(cand_model)
+            if candidate_capacity is not None and candidate_capacity != ram_capacity:
                 continue
 
         score = 0

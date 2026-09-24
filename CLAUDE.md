@@ -104,9 +104,13 @@ Scrape.Do calls are budgeted per-request via a `ContextVar` (`_LOOKUP_BUDGET`) w
 - `app/duplicates.py` — conservative duplicate detection (normalizes manufacturer/model, reports exact/likely/possible) used by the add-inventory form and `/api/duplicates`.
 
 ## Versioning & release conventions
-- `app/version.py` is the **single source of truth** for the displayed version (`APP_VERSION`); injected into all templates via a context processor. Bump it here when releasing.
+- `app/version.py` is the **single source of truth** for the displayed version (`APP_VERSION`); injected into all templates via a context processor. Bump it here when releasing. Patch for bug fixes, minor for features, major for breaking schema changes.
 - Note the seed data has its own independent version: `SEED_VERSION` in `app/seeds/seed_db.py` (controls re-import).
-- Releases are distributed as file patches: `PATCH_FILES.txt` lists the changed files for the current hotfix and the redeploy steps. `README.md` holds the running changelog — keep it and `PATCH_FILES.txt` current when shipping a version bump.
+- Release docs — one job per file, no duplication:
+  - `CHANGELOG.md` — the only release history, newest first. One `## vX.Y.Z` section per release saying what changed; anything the user must do to upgrade (migrations, env vars, maintenance commands) goes on an `**Upgrade:**` line in that section.
+  - `PATCH_FILES.txt` — current release only, overwritten each release: files to sync, files to delete, deploy steps, how to verify. It points to `CHANGELOG.md` for the what/why and never repeats it.
+  - `README.md` — describes the app; its Changelog section only links to `CHANGELOG.md`. Don't put release notes or a version number in it.
+  - Never create versioned copies (`PATCH_FILES_3.8.6.txt`), `README_PATCH.md`, or loose `.patch` files.
 
 ## Environment variables
 Set in `.env` (compose reads it) or the container environment. `SECRET_KEY` and `DATABASE_URL` are the only ones needed to boot. Optional integrations: `SCRAPEDO_TOKEN` (paid scraper fallback), `EBAY_APP_ID` + `EBAY_APP_SECRET` (price estimates), `OPENWEBUI_API_TOKEN` (LLM lookup). `SEED_ON_STARTUP=false` skips the startup seed import.

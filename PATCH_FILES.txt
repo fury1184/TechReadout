@@ -1,110 +1,33 @@
-TechReadOut v3.8.4 -- disaster-recovery pass: real mysqldump backups +
-expanded/fixed JSON export-import
-========================================================================
+TechReadOut v3.8.7 -- deploy steps
+==================================
+What changed and why: see CHANGELOG.md, v3.8.7.
+This file only covers the current release and is overwritten each time.
+.env is NOT included (public-safe zip).
 
-Builds on v3.8.3 (lookup.py's LGA1151-2 fix is unchanged and not
-re-included here -- keep that file as-is if already applied). backup.py
-below is the FULL cumulative file, including both the v3.8.3 export fix
-and everything new in this patch -- don't stack it on top of the v3.8.3
-backup.py, replace it outright.
+Files to sync (paths relative to repo root)
+-------------------------------------------
+  app/name_normalization.py
+  app/version.py
+  tests/test_ram_canonicalization.py   (new)
+  CHANGELOG.md                         (new)
+  PATCH_FILES.txt
+  README.md
+  CLAUDE.md
 
-Files in this patch (paths relative to repo root):
+Files to delete (repo: git rm; server: delete by hand -- WinSCP
+Synchronize does not remove remote files unless "Delete files" is checked)
+-------------------------------------------------------------------------
+  README_PATCH.md
+  PATCH_FILES_3.8.6.txt
+  TechReadout_CPU_Lookup_Fix.patch     (untracked, local only)
 
-  app/routes/backup.py     Three separate things:
+Deploy
+------
+  1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
+  2. docker restart techreadout-app
+  No schema change, no migration, no rebuild.
 
-                            1. import_all_data() -- the function restore_backup()
-                               actually calls -- had the exact same missing-fields
-                               bug as import_specs_json() (fixed in v3.8.3), but in
-                               a DIFFERENT function that patch never touched. Its
-                               HardwareSpec(...) constructor was missing
-                               gpu_base_clock/gpu_boost_clock and every mobo_/
-                               storage_/psu_/cooler_/case_/fan_ field even though
-                               export_all_data() now writes them all. Fixed to
-                               match.
-
-                            2. import_all_data() never imported build_plans at
-                               all -- export_all_data() wrote them out, but
-                               nothing read them back on restore, not even the
-                               BuildPlan header rows, let alone the
-                               BuildPlanComponent line items inside each plan.
-                               Added a full build_plans + components import,
-                               using the same map-old-id-to-new-id pattern as
-                               spec_map/host_map (added inventory_map for this,
-                               since nothing previously tracked new inventory
-                               item ids during import).
-
-                            3. Per your call: added app_settings, pending_reviews,
-                               and scrape_jobs to both export and import.
-                               LookupCache, PriceCache, and Backup are
-                               intentionally still excluded (pure caches / a
-                               table that would be backing up records of backups
-                               -- your call, not an oversight).
-
-                               - app_settings: straightforward key/value,
-                                 AppSetting.set() upserts by key so a restore
-                                 intentionally overwrites current settings with
-                                 the backup's values (unlike specs/inventory,
-                                 which merge around existing data).
-                               - pending_reviews: candidates is a JSON blob that
-                                 embeds spec_id values internally
-                                 ([{name, spec_id, confidence, source}, ...]).
-                                 Remapped those through spec_map on import, same
-                                 as resolved_spec_id -- otherwise they'd silently
-                                 point at whatever unrelated spec ends up with
-                                 that id after a restore.
-                               - scrape_jobs: no other table references these,
-                                 so no id remapping needed, straight import.
-
-  app/version.py            APP_VERSION bumped 3.8.3 -> 3.8.4.
-
-  docker-compose.yml        Added two new services, db-backup-local and
-                             db-backup-nas, both using fradelg/mysql-cron-backup
-                             (actively maintained, 10M+ pulls) to run actual
-                             `mysqldump --single-transaction` on a schedule --
-                             independent of the app's own JSON export/import
-                             entirely. This is real disaster-recovery coverage:
-                             a full, faithful dump of every table exactly as
-                             MariaDB has it, not a hand-maintained serializer
-                             that has to be kept in sync with the schema (which
-                             is exactly how the JSON export bugs above
-                             happened).
-
-                             - Daily at 03:00 UTC, MAX_BACKUPS=30 keeps a
-                               rolling 30-day window on each destination.
-                             - Two separate service instances (one per
-                               destination) rather than one dump mirrored to
-                               two places, so local and NAS backups are fully
-                               independent -- neither depends on the other
-                               succeeding.
-                             - db-backup-local writes to
-                               ./data/backups/mysqldump (same host as the db
-                               container).
-                             - db-backup-nas writes to ${NAS_BACKUP_HOST_PATH},
-                               a HOST path where the NAS share must already be
-                               mounted (the CIFS/fstab mount on Locust).
-                               IMPORTANT: if that path doesn't exist yet or
-                               isn't actually the live mount, Docker will
-                               silently create a plain local folder there
-                               instead of erroring -- verify with `mountpoint
-                               <path>` on the host before trusting this as your
-                               off-VM copy. Until that mount is confirmed live,
-                               this is really "two local backups," not
-                               redundancy.
-
-  .env.example              Added NAS_BACKUP_HOST_PATH with the same caveat
-                             noted inline. Add the actual value to your real
-                             .env (not committed).
-
-To apply: replace the 3 files at their matching paths, add
-NAS_BACKUP_HOST_PATH=<your actual NAS mount path> to your real .env, then
-`docker compose up -d` to bring up the two new sidecar services (no rebuild
-of the app image needed -- these are separate containers).
-
-Recommended verification after deploying:
-  1. `mountpoint ${NAS_BACKUP_HOST_PATH}` on Locust -- confirm it's the real
-     CIFS mount, not an empty directory Docker created for you.
-  2. `docker logs techreadout-db-backup-local` / `-nas` after the first
-     INIT_BACKUP run -- confirm both actually produced a .sql.gz file.
-  3. Spin up a scratch MariaDB container and restore one of the dumps into
-     it, just once, to confirm the dump is actually restorable -- an
-     untested backup is a hope, not a plan.
+Verify
+------
+  Re-import the Samsung 8GB PC3-14900R JSON on Import Specs. It should
+  create a new spec instead of "Skipped 1: Duplicate".
