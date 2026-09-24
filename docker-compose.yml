@@ -42,4 +42,55 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # Automated MariaDB dumps -- separate from the app's own JSON
+  # export/backup feature. Two identical services, one per
+  # destination, so local and NAS backups are fully independent
+  # (neither depends on the other succeeding). Requires the NAS
+  # share to already be mounted on the HOST at the path given in
+  # NAS_BACKUP_HOST_PATH (.env) -- if that path doesn't exist yet,
+  # Docker will silently create a plain local folder there instead
+  # of erroring, which would quietly turn your "NAS" backup into a
+  # second local one. Verify the mount is live before trusting this.
+  db-backup-local:
+    image: fradelg/mysql-cron-backup
+    container_name: techreadout-db-backup-local
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data/backups/mysqldump:/backup
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=techreadout
+      - MYSQL_PASS=techreadout
+      - MYSQL_DB=techreadout
+      - MYSQLDUMP_OPTS=--single-transaction
+      # Daily at 03:00 UTC
+      - CRON_TIME=0 3 * * *
+      - MAX_BACKUPS=30
+      - INIT_BACKUP=1
+      - GZIP_LEVEL=6
+    restart: unless-stopped
+
+  db-backup-nas:
+    image: fradelg/mysql-cron-backup
+    container_name: techreadout-db-backup-nas
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${NAS_BACKUP_HOST_PATH}:/backup
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_PORT=3306
+      - MYSQL_USER=techreadout
+      - MYSQL_PASS=techreadout
+      - MYSQL_DB=techreadout
+      - MYSQLDUMP_OPTS=--single-transaction
+      - CRON_TIME=0 3 * * *
+      - MAX_BACKUPS=30
+      - INIT_BACKUP=1
+      - GZIP_LEVEL=6
+    restart: unless-stopped
 

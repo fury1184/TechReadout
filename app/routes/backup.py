@@ -10,7 +10,10 @@ from types import SimpleNamespace
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, current_app
 from app import db
-from app.models import Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan, AppSetting
+from app.models import (
+    Backup, Inventory, Host, HardwareSpec, ComponentType, BuildPlan,
+    BuildPlanComponent, AppSetting, PendingReview, ScrapeJob
+)
 from app.inventory_rules import inventory_quantity, enforce_assignment_status
 from app.name_normalization import (
     normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
@@ -486,7 +489,10 @@ def export_all_data():
         'hardware_specs': [],
         'inventory': [],
         'hosts': [],
-        'build_plans': []
+        'build_plans': [],
+        'app_settings': [],
+        'pending_reviews': [],
+        'scrape_jobs': []
     }
     
     # Component types
@@ -511,6 +517,8 @@ def export_all_data():
             'cpu_tdp': spec.cpu_tdp,
             'gpu_memory_size': spec.gpu_memory_size,
             'gpu_memory_type': spec.gpu_memory_type,
+            'gpu_base_clock': spec.gpu_base_clock,
+            'gpu_boost_clock': spec.gpu_boost_clock,
             'gpu_tdp': spec.gpu_tdp,
             'ram_size': spec.ram_size,
             'ram_type': spec.ram_type,
@@ -519,6 +527,50 @@ def export_all_data():
             'ram_modules': spec.ram_modules,
             'ram_ecc': spec.ram_ecc,
             'ram_module_type': spec.ram_module_type,
+            # Motherboard-specific -- previously missing entirely, so a
+            # full export/import round-trip silently dropped every
+            # motherboard's socket/chipset/slot data (import already
+            # reads these keys back; export just never wrote them).
+            'mobo_socket': spec.mobo_socket,
+            'mobo_chipset': spec.mobo_chipset,
+            'mobo_form_factor': spec.mobo_form_factor,
+            'mobo_memory_slots': spec.mobo_memory_slots,
+            'mobo_memory_type': spec.mobo_memory_type,
+            'mobo_max_memory': spec.mobo_max_memory,
+            'mobo_pcie_x16_slots': spec.mobo_pcie_x16_slots,
+            'mobo_pcie_x4_slots': spec.mobo_pcie_x4_slots,
+            'mobo_pcie_x1_slots': spec.mobo_pcie_x1_slots,
+            'mobo_m2_slots': spec.mobo_m2_slots,
+            'mobo_sata_ports': spec.mobo_sata_ports,
+            # Storage-specific -- same gap as motherboard above.
+            'storage_capacity': spec.storage_capacity,
+            'storage_interface': spec.storage_interface,
+            'storage_type': spec.storage_type,
+            'storage_form_factor': spec.storage_form_factor,
+            'storage_read_speed': spec.storage_read_speed,
+            'storage_write_speed': spec.storage_write_speed,
+            # PSU-specific -- same gap as motherboard above.
+            'psu_wattage': spec.psu_wattage,
+            'psu_efficiency': spec.psu_efficiency,
+            'psu_modular': spec.psu_modular,
+            'psu_form_factor': spec.psu_form_factor,
+            # Cooler-specific -- same gap as motherboard above.
+            'cooler_type': spec.cooler_type,
+            'cooler_socket_support': spec.cooler_socket_support,
+            'cooler_tdp_rating': spec.cooler_tdp_rating,
+            'cooler_fan_size': spec.cooler_fan_size,
+            'cooler_height': spec.cooler_height,
+            # Case-specific -- same gap as motherboard above.
+            'case_form_factor': spec.case_form_factor,
+            'case_type': spec.case_type,
+            'case_max_gpu_length': spec.case_max_gpu_length,
+            'case_max_cooler_height': spec.case_max_cooler_height,
+            # Fan-specific -- same gap as motherboard above.
+            'fan_size': spec.fan_size,
+            'fan_rpm_max': spec.fan_rpm_max,
+            'fan_airflow': float(spec.fan_airflow) if spec.fan_airflow else None,
+            'fan_noise': float(spec.fan_noise) if spec.fan_noise else None,
+            'fan_connector': spec.fan_connector,
             'source_url': spec.source_url
         })
     
@@ -578,6 +630,45 @@ def export_all_data():
             })
         data['build_plans'].append(plan_data)
     
+    # App settings -- key/value config (NAS backup path, SEED_VERSION, etc.)
+    for setting in AppSetting.query.all():
+        data['app_settings'].append({
+            'key': setting.key,
+            'value': setting.value
+        })
+    
+    # Pending reviews -- items queued for manual accept/skip in the lookup
+    # pipeline. candidates is a JSON blob that embeds spec_id values
+    # internally; those get remapped on import the same way
+    # resolved_spec_id does, via spec_map.
+    for pr in PendingReview.query.all():
+        data['pending_reviews'].append({
+            'id': pr.id,
+            'query': pr.query,
+            'component_type': pr.component_type,
+            'candidates': pr.candidates,
+            'top_confidence': pr.top_confidence,
+            'status': pr.status,
+            'resolved_spec_id': pr.resolved_spec_id,
+            'triggered_at': pr.triggered_at.isoformat() if pr.triggered_at else None,
+            'resolved_at': pr.resolved_at.isoformat() if pr.resolved_at else None
+        })
+    
+    # Scrape jobs -- job history, kept for troubleshooting.
+    for job in ScrapeJob.query.all():
+        data['scrape_jobs'].append({
+            'id': job.id,
+            'source': job.source,
+            'component_type': job.component_type,
+            'status': job.status,
+            'items_found': job.items_found,
+            'items_added': job.items_added,
+            'error_message': job.error_message,
+            'started_at': job.started_at.isoformat() if job.started_at else None,
+            'completed_at': job.completed_at.isoformat() if job.completed_at else None,
+            'created_at': job.created_at.isoformat() if job.created_at else None
+        })
+    
     return data
 
 
@@ -622,6 +713,8 @@ def import_all_data(data):
                     cpu_tdp=spec_data.get('cpu_tdp'),
                     gpu_memory_size=spec_data.get('gpu_memory_size'),
                     gpu_memory_type=spec_data.get('gpu_memory_type'),
+                    gpu_base_clock=spec_data.get('gpu_base_clock'),
+                    gpu_boost_clock=spec_data.get('gpu_boost_clock'),
                     gpu_tdp=spec_data.get('gpu_tdp'),
                     ram_size=spec_data.get('ram_size'),
                     ram_type=spec_data.get('ram_type'),
@@ -630,6 +723,41 @@ def import_all_data(data):
                     ram_modules=spec_data.get('ram_modules'),
                     ram_ecc=spec_data.get('ram_ecc'),
                     ram_module_type=spec_data.get('ram_module_type'),
+                    mobo_socket=spec_data.get('mobo_socket'),
+                    mobo_chipset=spec_data.get('mobo_chipset'),
+                    mobo_form_factor=spec_data.get('mobo_form_factor'),
+                    mobo_memory_slots=spec_data.get('mobo_memory_slots'),
+                    mobo_memory_type=spec_data.get('mobo_memory_type'),
+                    mobo_max_memory=spec_data.get('mobo_max_memory'),
+                    mobo_pcie_x16_slots=spec_data.get('mobo_pcie_x16_slots'),
+                    mobo_pcie_x4_slots=spec_data.get('mobo_pcie_x4_slots'),
+                    mobo_pcie_x1_slots=spec_data.get('mobo_pcie_x1_slots'),
+                    mobo_m2_slots=spec_data.get('mobo_m2_slots'),
+                    mobo_sata_ports=spec_data.get('mobo_sata_ports'),
+                    storage_capacity=spec_data.get('storage_capacity'),
+                    storage_interface=spec_data.get('storage_interface'),
+                    storage_type=spec_data.get('storage_type'),
+                    storage_form_factor=spec_data.get('storage_form_factor'),
+                    storage_read_speed=spec_data.get('storage_read_speed'),
+                    storage_write_speed=spec_data.get('storage_write_speed'),
+                    psu_wattage=spec_data.get('psu_wattage'),
+                    psu_efficiency=spec_data.get('psu_efficiency'),
+                    psu_modular=spec_data.get('psu_modular'),
+                    psu_form_factor=spec_data.get('psu_form_factor'),
+                    cooler_type=spec_data.get('cooler_type'),
+                    cooler_socket_support=spec_data.get('cooler_socket_support'),
+                    cooler_tdp_rating=spec_data.get('cooler_tdp_rating'),
+                    cooler_fan_size=spec_data.get('cooler_fan_size'),
+                    cooler_height=spec_data.get('cooler_height'),
+                    case_form_factor=spec_data.get('case_form_factor'),
+                    case_type=spec_data.get('case_type'),
+                    case_max_gpu_length=spec_data.get('case_max_gpu_length'),
+                    case_max_cooler_height=spec_data.get('case_max_cooler_height'),
+                    fan_size=spec_data.get('fan_size'),
+                    fan_rpm_max=spec_data.get('fan_rpm_max'),
+                    fan_airflow=spec_data.get('fan_airflow'),
+                    fan_noise=spec_data.get('fan_noise'),
+                    fan_connector=spec_data.get('fan_connector'),
                     source_url=spec_data.get('source_url')
                 )
                 db.session.add(spec)
@@ -659,6 +787,7 @@ def import_all_data(data):
             host_map[host_data.get('id')] = existing.id
     
     # Import inventory
+    inventory_map = {}
     for item_data in data.get('inventory', []):
         ct_name = item_data.get('component_type')
         ct = ComponentType.query.filter_by(name=ct_name).first()
@@ -683,6 +812,8 @@ def import_all_data(data):
         if existing:
             # Update quantity
             existing.quantity += item_data.get('quantity', 1)
+            if item_data.get('id') is not None:
+                inventory_map[item_data['id']] = existing.id
         else:
             item = Inventory(
                 component_type_id=ct.id,
@@ -708,6 +839,118 @@ def import_all_data(data):
                 item.sale_date = datetime.fromisoformat(item_data['sale_date']).date()
             enforce_assignment_status(item)
             db.session.add(item)
+            db.session.flush()
+            if item_data.get('id') is not None:
+                inventory_map[item_data['id']] = item.id
+    
+    # Import build plans + their assigned components. Previously not
+    # imported at all -- export_all_data wrote them out, but a restore
+    # silently dropped every build plan.
+    for plan_data in data.get('build_plans', []):
+        existing_plan = BuildPlan.query.filter_by(name=plan_data['name']).first()
+        if existing_plan:
+            plan = existing_plan
+        else:
+            plan = BuildPlan(
+                name=plan_data['name'],
+                description=plan_data.get('description'),
+                status=plan_data.get('status', 'Planning'),
+                min_ram_gb=plan_data.get('min_ram_gb'),
+                min_vram_gb=plan_data.get('min_vram_gb'),
+                cpu_socket=plan_data.get('cpu_socket'),
+                use_case=plan_data.get('use_case'),
+                budget=plan_data.get('budget')
+            )
+            db.session.add(plan)
+            db.session.flush()
+        
+        for comp_data in plan_data.get('components', []):
+            ct = ComponentType.query.filter_by(name=comp_data.get('component_type')).first()
+            if not ct:
+                continue
+            mapped_inventory_id = inventory_map.get(comp_data.get('inventory_id'))
+            existing_comp = BuildPlanComponent.query.filter_by(
+                build_plan_id=plan.id,
+                inventory_id=mapped_inventory_id,
+                component_type_id=ct.id
+            ).first()
+            if not existing_comp:
+                db.session.add(BuildPlanComponent(
+                    build_plan_id=plan.id,
+                    inventory_id=mapped_inventory_id,
+                    component_type_id=ct.id,
+                    quantity=comp_data.get('quantity', 1)
+                ))
+    
+    # Import app settings -- AppSetting.set() already upserts by key, so
+    # a restore intentionally overwrites current settings with the
+    # backup's values (unlike specs/inventory, settings should match the
+    # backup exactly, not merge around it).
+    for setting_data in data.get('app_settings', []):
+        AppSetting.set(setting_data['key'], setting_data['value'])
+    
+    # Import pending reviews. candidates embeds spec_id values internally
+    # ([{name, spec_id, confidence, source}, ...]) -- remap those through
+    # spec_map the same way resolved_spec_id is remapped, or they'd point
+    # at whatever unrelated spec happens to occupy that id after restore.
+    for pr_data in data.get('pending_reviews', []):
+        existing_pr = PendingReview.query.filter_by(
+            query=pr_data['query'],
+            component_type=pr_data.get('component_type'),
+            triggered_at=datetime.fromisoformat(pr_data['triggered_at']) if pr_data.get('triggered_at') else None
+        ).first()
+        if existing_pr:
+            continue
+        
+        remapped_candidates = None
+        if pr_data.get('candidates'):
+            remapped_candidates = []
+            for cand in pr_data['candidates']:
+                cand = dict(cand)
+                if cand.get('spec_id') is not None:
+                    cand['spec_id'] = spec_map.get(cand['spec_id'], cand['spec_id'])
+                remapped_candidates.append(cand)
+        
+        pr = PendingReview(
+            query=pr_data['query'],
+            component_type=pr_data.get('component_type'),
+            candidates=remapped_candidates,
+            top_confidence=pr_data.get('top_confidence'),
+            status=pr_data.get('status', 'Pending'),
+            resolved_spec_id=spec_map.get(pr_data.get('resolved_spec_id'), pr_data.get('resolved_spec_id')),
+        )
+        if pr_data.get('triggered_at'):
+            pr.triggered_at = datetime.fromisoformat(pr_data['triggered_at'])
+        if pr_data.get('resolved_at'):
+            pr.resolved_at = datetime.fromisoformat(pr_data['resolved_at'])
+        db.session.add(pr)
+    
+    # Import scrape jobs -- kept for troubleshooting history only, no
+    # other table references these, so no id remapping needed.
+    for job_data in data.get('scrape_jobs', []):
+        existing_job = ScrapeJob.query.filter_by(
+            source=job_data.get('source'),
+            component_type=job_data.get('component_type'),
+            created_at=datetime.fromisoformat(job_data['created_at']) if job_data.get('created_at') else None
+        ).first()
+        if existing_job:
+            continue
+        
+        job = ScrapeJob(
+            source=job_data.get('source'),
+            component_type=job_data.get('component_type'),
+            status=job_data.get('status', 'Pending'),
+            items_found=job_data.get('items_found', 0),
+            items_added=job_data.get('items_added', 0),
+            error_message=job_data.get('error_message')
+        )
+        if job_data.get('started_at'):
+            job.started_at = datetime.fromisoformat(job_data['started_at'])
+        if job_data.get('completed_at'):
+            job.completed_at = datetime.fromisoformat(job_data['completed_at'])
+        if job_data.get('created_at'):
+            job.created_at = datetime.fromisoformat(job_data['created_at'])
+        db.session.add(job)
     
     db.session.commit()
 
@@ -890,6 +1133,12 @@ def import_specs_json():
                     case_type=spec_data.get('case_type'),
                     case_max_gpu_length=spec_data.get('case_max_gpu_length'),
                     case_max_cooler_height=spec_data.get('case_max_cooler_height'),
+                    # Fan fields
+                    fan_size=spec_data.get('fan_size'),
+                    fan_rpm_max=spec_data.get('fan_rpm_max'),
+                    fan_airflow=spec_data.get('fan_airflow'),
+                    fan_noise=spec_data.get('fan_noise'),
+                    fan_connector=spec_data.get('fan_connector'),
                 )
                 
                 db.session.add(spec)

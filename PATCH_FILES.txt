@@ -1,139 +1,110 @@
-TechReadOut v3.8.2 — Inventory search box + CPU-Monkey lookup fix +
-                      socket normalization (display fix + real ingestion fix)
-================================================================
+TechReadOut v3.8.4 -- disaster-recovery pass: real mysqldump backups +
+expanded/fixed JSON export-import
+========================================================================
+
+Builds on v3.8.3 (lookup.py's LGA1151-2 fix is unchanged and not
+re-included here -- keep that file as-is if already applied). backup.py
+below is the FULL cumulative file, including both the v3.8.3 export fix
+and everything new in this patch -- don't stack it on top of the v3.8.3
+backup.py, replace it outright.
 
 Files in this patch (paths relative to repo root):
 
-  app/routes/main.py                inventory_list() and inventory_export()
-                                     both gained a `q` query param. When
-                                     present, results are filtered (case-
-                                     insensitive partial match) against
-                                     HardwareSpec.model, HardwareSpec.
-                                     manufacturer, Inventory.custom_name, and
-                                     Inventory.custom_manufacturer via an
-                                     outerjoin — covers both catalog and
-                                     manually-entered custom items. ANDs with
-                                     the existing Component Type / Status /
-                                     Assignment filters rather than replacing
-                                     them; CSV export now respects an active
-                                     search the same way it already respects
-                                     the other filters. inventory_list() also
-                                     passes current_query=q to the template so
-                                     the entered value survives reloads.
+  app/routes/backup.py     Three separate things:
 
-  app/templates/inventory/list.html Adds a full-width Search input as its own
-                                     row at the top of the existing filter
-                                     <form>, above Component Type / Status /
-                                     Assignment, so it submits and combines
-                                     with them automatically. Placeholder
-                                     example text ("i5, 3060, ASUS") hints at
-                                     partial-match behavior.
+                            1. import_all_data() -- the function restore_backup()
+                               actually calls -- had the exact same missing-fields
+                               bug as import_specs_json() (fixed in v3.8.3), but in
+                               a DIFFERENT function that patch never touched. Its
+                               HardwareSpec(...) constructor was missing
+                               gpu_base_clock/gpu_boost_clock and every mobo_/
+                               storage_/psu_/cooler_/case_/fan_ field even though
+                               export_all_data() now writes them all. Fixed to
+                               match.
 
-  app/scrapers/lookup.py            Fixed _cpu_monkey_slug() building a
-                                     malformed CPU-Monkey URL (duplicate
-                                     "intel", e.g. cpu-intel_core_intel_i5_
-                                     2500k instead of cpu-intel_core_i5_2500k)
-                                     whenever the incoming query already
-                                     contained a leading "intel " token — e.g.
-                                     a combined manufacturer+model query like
-                                     "intel i5-2500k" from the Add Item form's
-                                     manufacturer field. The family-prefix
-                                     inserts ("core "/"xeon ") ran before the
-                                     startswith('intel ') check, pushing an
-                                     existing "intel " out of position and
-                                     causing it to be re-added a second time.
-                                     Same bug class would have hit Xeon
-                                     queries too (e.g. "intel e5-2680v4" ->
-                                     "intel xeon intel e5-2680v4"). Fix strips
-                                     any leading "intel" up front and re-adds
-                                     it exactly once after the family-prefix
-                                     logic runs. Root-caused via a live
-                                     "i5-2500K" lookup that missed Intel ARK
-                                     (separate/unrelated miss) and then hit
-                                     this bug on the CPU-Monkey fallback,
-                                     returning a 404.
+                            2. import_all_data() never imported build_plans at
+                               all -- export_all_data() wrote them out, but
+                               nothing read them back on restore, not even the
+                               BuildPlan header rows, let alone the
+                               BuildPlanComponent line items inside each plan.
+                               Added a full build_plans + components import,
+                               using the same map-old-id-to-new-id pattern as
+                               spec_map/host_map (added inventory_map for this,
+                               since nothing previously tracked new inventory
+                               item ids during import).
 
-  app/routes/stats.py                - Added "LGA2011": "LGA 2011" to
-                                       VALUE_ALIASES for cpu_socket and
-                                       mobo_socket (spacing-only duplicate
-                                       rows on the /stats BY SOCKET table).
-                                     - Added "LGA1151": "LGA 1151" to
-                                       mobo_socket (same spacing issue).
-                                       "LGA 1151 (300 Series)" is left
-                                       unmerged on purpose — it's a real
-                                       electrical-spec distinction (300-
-                                       series boards aren't compatible with
-                                       earlier Skylake/Kaby Lake LGA1151
-                                       boards despite the same physical
-                                       socket), not a data-entry variant.
-                                     - _normalize_value() alias matching was
-                                       case-sensitive, so "LGA2011-v3"
-                                       (lowercase v) wasn't matching the
-                                       already-mapped "LGA2011-V3" and stayed
-                                       as its own row. Added a case-
-                                       insensitive fallback so future casing
-                                       variants don't each need their own
-                                       explicit dict entry.
-                                     - Added a new mobo_chipset alias group
-                                       (field had none before): "Intel
-                                       Z390"->"Z390", "Intel X99"->"X99",
-                                       "Intel X79"->"X79", "Intel Z370"->
-                                       "Z370" — the BY CHIPSET table was
-                                       showing prefixed/unprefixed forms of
-                                       the same chipset as separate rows
-                                       (Z390: 3 + Intel Z390: 2, X99: 1 +
-                                       Intel X99: 1). All display-only; raw
-                                       DB values untouched.
+                            3. Per your call: added app_settings, pending_reviews,
+                               and scrape_jobs to both export and import.
+                               LookupCache, PriceCache, and Backup are
+                               intentionally still excluded (pure caches / a
+                               table that would be backing up records of backups
+                               -- your call, not an oversight).
 
-  app/name_normalization.py         NEW function normalize_socket(). The
-                                     real ingestion-time fix behind the
-                                     stats.py display patch above — see
-                                     BACKLOG note in stats.py. Canonicalizes
-                                     LGA socket spacing/dash/casing variants
-                                     (LGA1151/LGA 1151 -> "LGA 1151";
-                                     LGA2011-V3/LGA2011-v3/LGA 2011-v3 ->
-                                     "LGA 2011-3"). Preserves meaningful
-                                     suffixes like "(300 Series)" — a real
-                                     electrical-spec distinction, not a
-                                     formatting variant. Non-LGA sockets
-                                     (AM4, AM5, sTRX4, etc.) pass through
-                                     unchanged (whitespace collapsed only) —
-                                     no issues seen there yet, so left alone
-                                     rather than guessed at.
+                               - app_settings: straightforward key/value,
+                                 AppSetting.set() upserts by key so a restore
+                                 intentionally overwrites current settings with
+                                 the backup's values (unlike specs/inventory,
+                                 which merge around existing data).
+                               - pending_reviews: candidates is a JSON blob that
+                                 embeds spec_id values internally
+                                 ([{name, spec_id, confidence, source}, ...]).
+                                 Remapped those through spec_map on import, same
+                                 as resolved_spec_id -- otherwise they'd silently
+                                 point at whatever unrelated spec ends up with
+                                 that id after a restore.
+                               - scrape_jobs: no other table references these,
+                                 so no id remapping needed, straight import.
 
-  app/models.py                     Added a before_insert/before_update
-                                     SQLAlchemy event listener on
-                                     HardwareSpec that runs
-                                     normalize_socket() on cpu_socket and
-                                     mobo_socket automatically on every
-                                     save. Single choke point — covers
-                                     scraper results, seed import, the
-                                     manual add/edit form, and backup/JSON
-                                     import in one place, so no individual
-                                     call site needs its own normalization
-                                     logic and none can forget to add it
-                                     later. NOTE: only normalizes new
-                                     writes going forward — existing rows
-                                     are NOT retroactively cleaned up by
-                                     this alone (see "Not included" below).
+  app/version.py            APP_VERSION bumped 3.8.3 -> 3.8.4.
 
-  app/version.py                    APP_VERSION bumped 3.7.0 -> 3.8.2
-                                     (3.8.0 search feature + 3.8.1 lookup
-                                     fix + 3.8.1 socket alias display fix +
-                                     3.8.2 socket ingestion-normalization
-                                     fix, combined into a single release
-                                     since 3.8.x had not yet been deployed).
+  docker-compose.yml        Added two new services, db-backup-local and
+                             db-backup-nas, both using fradelg/mysql-cron-backup
+                             (actively maintained, 10M+ pulls) to run actual
+                             `mysqldump --single-transaction` on a schedule --
+                             independent of the app's own JSON export/import
+                             entirely. This is real disaster-recovery coverage:
+                             a full, faithful dump of every table exactly as
+                             MariaDB has it, not a hand-maintained serializer
+                             that has to be kept in sync with the schema (which
+                             is exactly how the JSON export bugs above
+                             happened).
 
-To apply: copy all files above over the matching paths in your working tree.
-No rebuild needed — the ./app bind mount picks up route/template changes,
-and Flask's debug reloader restarts the dev server automatically on save.
+                             - Daily at 03:00 UTC, MAX_BACKUPS=30 keeps a
+                               rolling 30-day window on each destination.
+                             - Two separate service instances (one per
+                               destination) rather than one dump mirrored to
+                               two places, so local and NAS backups are fully
+                               independent -- neither depends on the other
+                               succeeding.
+                             - db-backup-local writes to
+                               ./data/backups/mysqldump (same host as the db
+                               container).
+                             - db-backup-nas writes to ${NAS_BACKUP_HOST_PATH},
+                               a HOST path where the NAS share must already be
+                               mounted (the CIFS/fstab mount on Locust).
+                               IMPORTANT: if that path doesn't exist yet or
+                               isn't actually the live mount, Docker will
+                               silently create a plain local folder there
+                               instead of erroring -- verify with `mountpoint
+                               <path>` on the host before trusting this as your
+                               off-VM copy. Until that mount is confirmed live,
+                               this is really "two local backups," not
+                               redundancy.
 
-Not included in this patch: no changes to the Intel ARK search step itself
-(the miss seen in testing appears to be a separate ARK search-result/parsing
-issue, not yet diagnosed); no retroactive re-lookup of any inventory items
-that were previously imported with unresolved specs due to the CPU-Monkey
-bug; and no backfill of existing messy cpu_socket/mobo_socket values already
-in the database — normalize_socket() only fires on new inserts/updates, so
-existing rows still rely on the stats.py VALUE_ALIASES display patch until a
-backfill (one-off script, or folded into the existing /maintenance/
-normalize-names page) is built — deferred pending a decision on which.
+  .env.example              Added NAS_BACKUP_HOST_PATH with the same caveat
+                             noted inline. Add the actual value to your real
+                             .env (not committed).
+
+To apply: replace the 3 files at their matching paths, add
+NAS_BACKUP_HOST_PATH=<your actual NAS mount path> to your real .env, then
+`docker compose up -d` to bring up the two new sidecar services (no rebuild
+of the app image needed -- these are separate containers).
+
+Recommended verification after deploying:
+  1. `mountpoint ${NAS_BACKUP_HOST_PATH}` on Locust -- confirm it's the real
+     CIFS mount, not an empty directory Docker created for you.
+  2. `docker logs techreadout-db-backup-local` / `-nas` after the first
+     INIT_BACKUP run -- confirm both actually produced a .sql.gz file.
+  3. Spin up a scratch MariaDB container and restore one of the dumps into
+     it, just once, to confirm the dump is actually restorable -- an
+     untested backup is a hope, not a plan.
