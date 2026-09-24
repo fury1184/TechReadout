@@ -679,10 +679,15 @@ def _parse_cpu_monkey_detail(html: str, url: str) -> Optional[Dict]:
     if socket:
         socket = re.sub(r'\s+', ' ', socket).strip()
         # CPU-Monkey calls Coffee Lake Refresh's socket "LGA 1151-2" to
-        # distinguish 300-series boards. Intel/TechReadOut use the physical
-        # socket name LGA1151, so normalize that alias for compatibility.
+        # distinguish 300-series boards from earlier Skylake/Kaby Lake
+        # LGA1151 boards -- a real electrical-spec distinction (see
+        # app.name_normalization.normalize_socket), not a formatting
+        # variant. Map it to the same "(300 Series)" convention used for
+        # motherboard sockets so CPU<->motherboard compatibility matching
+        # in app.compatibility works correctly instead of silently
+        # matching both generations.
         if re.fullmatch(r'LGA\s*1151\s*-\s*2', socket, re.I):
-            socket = 'LGA1151'
+            socket = 'LGA 1151 (300 Series)'
         else:
             socket = re.sub(r'^(LGA)\s+(\d)', r'\1\2', socket, flags=re.I)
         specs['cpu_socket'] = socket
@@ -2729,7 +2734,7 @@ def parse_asus_official_motherboard(html: str, url: str) -> Optional[Dict]:
     socket_text = find('CPU')
     if socket_text:
         socket_match = re.search(
-            r'(lga\s*\d{3,4}|am[45]|strx4|swrx8|tr4)', socket_text, re.I,
+            r'(lga\s*\d{3,4}(?:\s*-\s*v?\d+)?|am[45]|strx4|swrx8|tr4)', socket_text, re.I,
         )
         if socket_match:
             specs['mobo_socket'] = socket_match.group(1).upper().replace(' ', '')

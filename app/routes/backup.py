@@ -641,7 +641,7 @@ def export_all_data():
     # pipeline. candidates is a JSON blob that embeds spec_id values
     # internally; those get remapped on import the same way
     # resolved_spec_id does, via spec_map.
-    for pr in PendingReview.query.all():
+    for pr in db.session.query(PendingReview).all():
         data['pending_reviews'].append({
             'id': pr.id,
             'query': pr.query,
@@ -832,10 +832,8 @@ def import_all_data(data):
             )
             # Handle dates
             if item_data.get('purchase_date'):
-                from datetime import datetime
                 item.purchase_date = datetime.fromisoformat(item_data['purchase_date']).date()
             if item_data.get('sale_date'):
-                from datetime import datetime
                 item.sale_date = datetime.fromisoformat(item_data['sale_date']).date()
             enforce_assignment_status(item)
             db.session.add(item)
@@ -894,7 +892,7 @@ def import_all_data(data):
     # spec_map the same way resolved_spec_id is remapped, or they'd point
     # at whatever unrelated spec happens to occupy that id after restore.
     for pr_data in data.get('pending_reviews', []):
-        existing_pr = PendingReview.query.filter_by(
+        existing_pr = db.session.query(PendingReview).filter_by(
             query=pr_data['query'],
             component_type=pr_data.get('component_type'),
             triggered_at=datetime.fromisoformat(pr_data['triggered_at']) if pr_data.get('triggered_at') else None

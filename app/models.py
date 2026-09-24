@@ -159,11 +159,14 @@ def _normalize_hardware_spec_sockets(mapper, connection, target):
     logic; whatever they write gets canonicalized here before it hits the
     database. See app.name_normalization.normalize_socket for the rules.
     """
-    from app.name_normalization import normalize_socket
+    from app.name_normalization import canonical_spec_socket
     if target.cpu_socket:
-        target.cpu_socket = normalize_socket(target.cpu_socket)
+        target.cpu_socket = canonical_spec_socket(
+            'cpu_socket', target.cpu_socket, model=target.model)
     if target.mobo_socket:
-        target.mobo_socket = normalize_socket(target.mobo_socket)
+        target.mobo_socket = canonical_spec_socket(
+            'mobo_socket', target.mobo_socket,
+            model=target.model, chipset=target.mobo_chipset)
 
 
 class AppSetting(db.Model):

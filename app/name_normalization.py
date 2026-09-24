@@ -65,7 +65,7 @@ def normalize_manufacturer(manufacturer: Optional[str]) -> Optional[str]:
 
 
 _LGA_SOCKET_RE = re.compile(
-    r"(?i)^lga\s*-?\s*(\d{3,4})"      # "LGA" + socket number, any spacing/dash
+    r"(?i)^(?:socket\s+)?(?:fc)?lga\s*-?\s*(\d{3,4})"  # optional "Socket "/"FC" prefix, "LGA" + number
     r"(?:\s*-?\s*v?(\d+))?"           # optional generation suffix: -3, -v3, v3
     r"\s*(\(.*\))?$"                  # optional parenthetical, e.g. "(300 Series)"
 )
@@ -102,6 +102,47 @@ def normalize_socket(socket: Optional[str]) -> Optional[str]:
         canonical += f" {_clean_space(suffix)}"
     return canonical
 
+
+# Coffee Lake (8th/9th gen) platform detection for the LGA1151 v1/v2 split.
+# Sources disagree on whether they mark it (Intel ARK and ASUS pages don't;
+# Newegg and CPU-Monkey do), so the marker is derived from the record itself
+# instead of trusted from whichever source answered.
+_300_SERIES_CHIPSET_RE = re.compile(r"(?i)\b(?:H310|B360|B365|H370|Q370|Z370|Z390)\b")
+_COFFEE_LAKE_CPU_RE = re.compile(
+    r"(?i)\b(?:"
+    r"i[3579][\s-]?[89]\d{3}[a-z]*"       # Core i3/i5/i7/i9 8xxx/9xxx
+    r"|pentium(?:\s+gold)?\s+g5[4-6]\d{2}"  # Pentium Gold G5400/G5500/G5600
+    r"|celeron\s+g49\d{2}"                  # Celeron G4900 series
+    r")\b"
+)
+LGA1151_300_SERIES = "LGA 1151 (300 Series)"
+
+
+def canonical_spec_socket(
+    field: str,
+    socket: Optional[str],
+    *,
+    model: Optional[str] = None,
+    chipset: Optional[str] = None,
+) -> Optional[str]:
+    """Canonical socket for a HardwareSpec field ("cpu_socket"/"mobo_socket").
+
+    Runs normalize_socket(), then -- only when the result is plain
+    "LGA 1151" -- adds the "(300 Series)" marker if the record is clearly
+    a Coffee Lake part: a 300-series chipset for motherboards (chipset
+    field or model name), or an 8th/9th-gen Core / Pentium Gold G54-56xx /
+    Celeron G49xx model for CPUs. Only ever adds the marker, never removes
+    it. Xeon E-2100/2200 are deliberately left plain: they need C246
+    boards and don't run on consumer 300-series boards either.
+    """
+    value = normalize_socket(socket)
+    if value != "LGA 1151":
+        return value
+    if field == "mobo_socket":
+        hit = any(t and _300_SERIES_CHIPSET_RE.search(t) for t in (chipset, model))
+    else:
+        hit = bool(model and _COFFEE_LAKE_CPU_RE.search(model))
+    return LGA1151_300_SERIES if hit else value
 
 def _vendor_tokens(manufacturer: Optional[str]) -> list[str]:
     text = normalize_manufacturer(manufacturer) or ""

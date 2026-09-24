@@ -88,12 +88,41 @@ def _same_known_value(left: Any, right: Any) -> Optional[bool]:
     return _norm(left) == _norm(right)
 
 
+def _canonical_socket(value: Any) -> str:
+    """Reduce a socket string to a comparison key.
+
+    Strips cosmetic prefixes ("Socket AM5" -> "AM5", "FCLGA1700" ->
+    "LGA1700"), treats a bare number as LGA ("1151" -> "LGA 1151"), then
+    runs app.name_normalization.normalize_socket so spacing/dash variants
+    collapse ("LGA2011-V3" == "LGA 2011-3"). Generation suffixes and
+    parentheticals are kept, so "LGA 2011" != "LGA 2011-3" and
+    "LGA 1151" != "LGA 1151 (300 Series)".
+    """
+    from app.name_normalization import normalize_socket
+
+    text = str(value or "").strip()
+    text = re.sub(r"(?i)^socket\s+", "", text)
+    text = re.sub(r"(?i)^fc(?=\s*lga)", "", text)
+    if re.fullmatch(r"\d{3,4}(?:\s*-\s*v?\d+)?(?:\s*\(.*\))?", text):
+        text = f"LGA {text}"
+    return _norm(normalize_socket(text))
+
+
 def _socket_match(cpu_socket: Any, mobo_socket: Any) -> Optional[bool]:
+    """True/False when both sockets are known, None when either is missing.
+
+    Exact match on the canonical key. This previously used substring
+    containment, which made "LGA 1151" match "LGA 1151 (300 Series)" (v1
+    CPUs passing on 300-series boards and vice versa) and "LGA 2011" match
+    "LGA 2011-3" (X79 CPUs passing on X99 boards).
+    """
     if not cpu_socket or not mobo_socket:
         return None
-    left = _norm(cpu_socket)
-    right = _norm(mobo_socket)
-    return bool(left and right and (left == right or left in right or right in left))
+    left = _canonical_socket(cpu_socket)
+    right = _canonical_socket(mobo_socket)
+    if not left or not right:
+        return None
+    return left == right
 
 
 def _form_factor_rank(value: Any) -> Optional[int]:

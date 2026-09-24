@@ -1,0 +1,70 @@
+TechReadOut v3.8.6 -- cumulative patch (covers 3.8.3 through 3.8.6)
+====================================================================
+Replaces every earlier 3.8.3/3.8.4/3.8.5 file handed out in chat. If you
+applied some of those already, just overwrite with these -- each file here
+is the latest cumulative version. .env is NOT included (public-safe zip).
+
+Apply: WinSCP Synchronize (Local -> Remote) this folder onto
+/opt/stacks/techreadout/, then:
+    docker compose up -d          # picks up compose changes if any
+    docker restart techreadout-app
+    docker exec techreadout-app python -m app.maintenance.backfill_sockets          # dry run
+    docker exec techreadout-app python -m app.maintenance.backfill_sockets --apply  # after review
+Delete the stale root-level /opt/stacks/techreadout/compatibility.py
+(duplicate of app/compatibility.py; nothing imports it).
+
+Files
+-----
+app/scrapers/lookup.py
+  3.8.3  CPU-Monkey "LGA 1151-2" -> "LGA 1151 (300 Series)" instead of
+         being collapsed to plain LGA1151.
+  3.8.6  ASUS official motherboard parser keeps generation suffixes
+         (LGA2011-v3 no longer truncated to LGA2011).
+
+app/name_normalization.py  (3.8.6)
+  normalize_socket() strips "FC"/"Socket " prefixes (FCLGA1151 -> LGA 1151).
+  New canonical_spec_socket(): after normalizing, a plain "LGA 1151" gets
+  "(300 Series)" when the record is clearly Coffee Lake -- 300-series
+  chipset (H310/B360/B365/H370/Q370/Z370/Z390, in chipset or model) for
+  boards; Core i3/5/7/9 8xxx/9xxx, Pentium Gold G54-56xx, Celeron G49xx
+  for CPUs. Only adds the marker, never removes it. Xeon E-2100/2200 left
+  plain on purpose (C246-only).
+
+app/models.py  (3.8.6)
+  before_insert/before_update socket hook now calls canonical_spec_socket,
+  so every save path (scrapers, manual edits, seed, restore) gets the rule.
+
+app/compatibility.py  (3.8.5)
+  _socket_match(): exact match on the canonical socket instead of substring
+  containment. Fixes v1 CPUs passing on 300-series boards (and vice versa)
+  and LGA 2011 CPUs passing on LGA 2011-3 (X99) boards.
+
+app/routes/backup.py  (3.8.3 / 3.8.4, bug-fixed in 3.8.6)
+  - Export writes every mobo_/storage_/psu_/cooler_/case_/fan_ field and
+    gpu base/boost clocks; both import paths read them back.
+  - import_all_data() (used by Restore) now also restores build plans and
+    their components, app_settings, pending_reviews (embedded candidate
+    spec_ids remapped), and scrape_jobs.
+  - 3.8.6 fixes two bugs in the 3.8.4 version: PendingReview must use
+    db.session.query() (its `query` column shadows .query -- export and
+    restore would have crashed), and stray in-function datetime imports
+    that crashed restore on items without a purchase date.
+  Verified: export -> wipe -> restore -> restore again on a test DB; all
+  fields, links and remapped ids correct, no duplicates.
+  Note (pre-existing, unchanged): restoring over existing inventory adds
+  the backup's quantity to the matching row rather than skipping it.
+
+app/maintenance/backfill_sockets.py + __init__.py  (3.8.6)
+  Re-runs canonical_spec_socket over all existing specs. Dry run by
+  default; --apply to commit. Safe to re-run whenever the rules change.
+
+app/version.py -> 3.8.6
+
+docker-compose.yml, .env.example  (3.8.4)
+  db-backup-local / db-backup-nas mysqldump sidecars (daily 03:00 UTC,
+  30 kept). Needs NAS_BACKUP_HOST_PATH in your real .env; verify with
+  `mountpoint` that it's the live NAS mount. Unchanged since you deployed
+  them -- included so the zip is complete.
+
+sql/strip_chipset_vendor_prefix.sql
+  Optional; see header in the file.
