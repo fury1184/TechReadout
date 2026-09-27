@@ -10,7 +10,7 @@ TechReadOut is a self-hosted Flask app for tracking hardware inventory (homelab 
 
 ### Tests
 
-Pure-logic unit tests (no DB required) live in `tests/` and cover the matching core: `scrapers/normalization.py`, `scrapers/scoring.py`, `scrapers/validation.py`, and the DB-free helpers in `duplicates.py`.
+Tests live in `tests/`. Most are pure logic (no DB): the matching core (`scrapers/normalization.py`, `scrapers/scoring.py`, `scrapers/validation.py`), the DB-free helpers in `duplicates.py`, RAM canonicalization/validation, Scrape.Do token redaction, and `test_schema_sync.py` (every model column must exist in `migrations/init.sql`). Route/query tests use the `flask_app`, `client` and `make_spec` fixtures in `tests/conftest.py`, which run the real app on in-memory SQLite: `create_app(config)` accepts config overrides and skips its MariaDB-only `CREATE TABLE` statements on other databases. SQLite catches logic bugs, not MariaDB-specific behavior (collation, strict enums).
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt   # pytest + import-time deps
@@ -20,7 +20,7 @@ python -m pytest tests/test_scoring.py::TestScoreCandidate # single class
 python -m pytest -k vram                                   # by keyword
 ```
 
-`conftest.py` at the repo root puts the project on `sys.path` so `import app...` resolves. Tests import the `app` package, which pulls in Flask + bs4/requests at import time — hence they're in `requirements`/`requirements-dev`. There is no linter config or build step; the DB-backed route/query layers are not yet covered.
+`conftest.py` at the repo root puts the project on `sys.path` so `import app...` resolves. Tests import the `app` package, which pulls in Flask + bs4/requests at import time — hence they're in `requirements`/`requirements-dev`. There is no linter config or build step. Route coverage is partial (sale, stats, planner, credits).
 
 ### Running the app
 
@@ -55,7 +55,7 @@ python -m app.seeds.seed_db --check    # Show current vs available seed version
   - `migrations/init.sql` — full `CREATE TABLE` schema, run once by MariaDB's docker-entrypoint on first container init (fresh volume only).
   - `app/models.py` — SQLAlchemy models used at runtime. **Flask-Migrate is initialized but there is no `migrations/` Alembic env**; the `migrations/*.sql` files are hand-written, version-named upgrade scripts (e.g. `v3.5.4_ram_ecc.sql`) run manually against existing databases.
 - `app/__init__.py` also idempotently `CREATE TABLE IF NOT EXISTS` for `app_settings` and `lookup_cache` at startup.
-- When you add a column: update `app/models.py`, `migrations/init.sql`, **and** add a new `migrations/vX.Y.Z_*.sql` upgrade script for existing installs. The scraper→spec save path in `app/routes/api.py:_save_scraper_result` and the serializers must also learn the new field.
+- When you add a column: update `app/models.py`, `migrations/init.sql`, **and** add a new `migrations/vX.Y.Z_*.sql` upgrade script for existing installs (`tests/test_schema_sync.py` fails if `init.sql` is missing the column). The scraper→spec save path in `app/routes/api.py:_save_scraper_result` and the serializers must also learn the new field.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ python -m app.seeds.seed_db --check    # Show current vs available seed version
 - `routes/scraper.py` (`/scraper`) — lookup source info & **Lookup Settings** (toggles for Scrape.Do depth, eBay, Open WebUI).
 - `routes/planner.py` (`/planner`) — build planner.
 - `routes/backup.py` (`/backup`) — backup/restore, Excel/CSV export, and **AI Import** (manual spec import + JSON import).
-- `routes/stats.py` (`/`) — Inventory Breakdown page; groups owned inventory by socket/chipset/type/capacity/etc. per component type.
+- `routes/stats.py` (`/`) — Inventory Breakdown page; groups owned inventory (not Sold/Dead) by socket/chipset/type/capacity/etc. per component type. RAM is grouped by per-stick size.
 
 ### The spec lookup chain (core concept)
 Lookup is a fallback chain, orchestrated across two layers. `app/routes/api.py:lookup_hardware` (the `/api/lookup` endpoint) is the orchestrator; `app/scrapers/lookup.py:lookup_hardware` is only the web-scraper step.
@@ -74,11 +74,11 @@ Lookup is a fallback chain, orchestrated across two layers. `app/routes/api.py:l
 Order of resolution:
 1. **Local DB / seed search** — done *in api.py* (Strategies 1–4: exact, contains, contained-in, fuzzy word overlap). The seed database (~258 curated specs from `app/seeds/*.json`) lives in `hardware_specs`, so most lookups resolve here for free.
 2. **Lookup cache** (`lookup_cache` table, 30-day TTL) — a recorded `miss` short-circuits the scraper only when there are also no DB candidates.
-3. **Web scraper** — `app/scrapers/lookup.py:lookup_hardware`: for motherboards, manufacturer official site (ASUS, via `__NUXT_DATA__` JSON) → Newegg (via `window.__initialState__` JSON) → Amazon (scoped to niche/clone brands only: Machinist, Huananzhi, Jingyue) are tried first; for all component types, Scrape.Do (paid) against TechPowerUp/Intel ARK is the fallback; then **Open WebUI** (optional self-hosted LLM) as the last automatic step.
+3. **Web scraper** — `app/scrapers/lookup.py:lookup_hardware`: for motherboards, Newegg (via `window.__initialState__` JSON) → Amazon (scoped to niche/clone brands only: Machinist, Huananzhi, Jingyue); for RAM, Newegg → Amazon; CPUs and GPUs use Scrape.Do (paid) against Intel ARK/AMD/CPU-Monkey/TechPowerUp, with Amazon as a GPU/CPU fallback; other types use Amazon; then **Open WebUI** (optional self-hosted LLM) as the last automatic step. Nothing goes through Google (it serves scrapers a JavaScript-only page), so the ASUS official-site step is skipped. Search listings are picked by `pick_listing()`, which requires the title to pass `validate_result()` before any product page is fetched. A chain that hits errors or bot-check pages returns `lookup_incomplete`, and api.py doesn't save that as a miss; clean misses are cached for 7 days (`MISS_CACHE_DAYS`). Parser tests run against saved pages in `tests/fixtures/` (gzipped), so they cost no credits.
 4. **Manual AI Import** (`/backup/import-specs`) — for anything the chain misses.
 
 Confidence gating (in `api.py`, constants `REVIEW_THRESHOLD = 90`, `OPENWEBUI_CONFIDENCE_CAP = 89`):
-- **Auto-accept** only when best confidence ≥ 90 **and** `validate_result()` confirms the model actually matches (guards against fuzzy Strategy-4 false positives).
+- **Auto-accept** when best confidence ≥ 90. Scraper results must also pass `validate_result()` (via `acceptable_scrape_hit`). Database candidates do **not** go through `validate_result()`; instead `add_db_candidate` applies per-type identity guards before scoring — `cpu_models_compatible` for CPUs and `ram_candidate_decision` for RAM (spec conflict → dropped, vendor-only conflict → capped at 89 for review). Add a guard there when a component type needs one.
 - **Open WebUI results are capped at 89** so they can *never* auto-accept — they always land in the Pending Review queue regardless of score.
 - Otherwise up to 3 scored candidates are returned as `needs_review` and persisted to `pending_reviews` for the review queue.
 

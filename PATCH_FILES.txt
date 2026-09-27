@@ -1,33 +1,84 @@
-TechReadOut v3.8.7 -- deploy steps
+TechReadOut v3.8.9 -- deploy steps
 ==================================
-What changed and why: see CHANGELOG.md, v3.8.7.
+What changed and why: see CHANGELOG.md, v3.8.9.
 This file only covers the current release and is overwritten each time.
-.env is NOT included (public-safe zip).
+Built on the 3.8.8 working tree. .env is NOT included (public-safe zip).
+This is the complete 3.8.9 set: it replaces the earlier 3.8.9 zip, whether
+or not that one was deployed.
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/name_normalization.py
+  migrations/init.sql                  (fresh installs only; existing DBs untouched)
+  app/__init__.py
+  app/compatibility.py
+  app/routes/api.py
+  app/routes/main.py
+  app/routes/planner.py
+  app/routes/stats.py
+  app/scrapers/lookup.py
+  app/scrapers/validation.py
+  app/templates/inventory/add.html
+  app/templates/planner/detail.html
+  app/templates/scraper/index.html
   app/version.py
-  tests/test_ram_canonicalization.py   (new)
-  CHANGELOG.md                         (new)
+  tests/conftest.py                    (new)
+  tests/test_schema_sync.py            (new)
+  tests/test_scrapedo.py               (new)
+  tests/test_inventory_routes.py       (new)
+  tests/test_stats_breakdown.py        (new)
+  tests/test_build_planner.py          (new)
+  tests/test_lookup_sources.py         (new)
+  tests/test_ram_validation.py
+  tests/test_scoring.py                (restored)
+  tests/test_normalization.py          (restored)
+  tests/test_validation.py             (restored)
+  tests/test_duplicates.py             (restored)
+  tests/test_tpu_parser.py             (restored)
+  tests/fixtures/amazon_product_xpg_z1_ddr4_2400.html.gz            (new)
+  tests/fixtures/amazon_search_adata_xpg_ddr4_2400.html.gz          (new)
+  tests/fixtures/google_javascript_page.html.gz                     (new)
+  tests/fixtures/newegg_ram_product_teamgroup_vulcan_z.html.gz      (new)
+  tests/fixtures/newegg_search_teamgroup_vulcan_z.html.gz           (new)
+  tests/fixtures/newegg_search_zero_results.html.gz                 (new)
+  .gitignore
+  CHANGELOG.md
   PATCH_FILES.txt
-  README.md
   CLAUDE.md
 
-Files to delete (repo: git rm; server: delete by hand -- WinSCP
-Synchronize does not remove remote files unless "Delete files" is checked)
--------------------------------------------------------------------------
-  README_PATCH.md
-  PATCH_FILES_3.8.6.txt
-  TechReadout_CPU_Lookup_Fix.patch     (untracked, local only)
+Files to delete
+---------------
+  __init__.py      (repo ROOT only, not app/__init__.py -- locally and in
+                    /opt/stacks/techreadout/)
+
+Git, once (local repo)
+----------------------
+  git rm -r --cached app/seeds/__pycache__ app/serializers/__pycache__
+  (stops tracking .pyc files; the files stay on disk)
 
 Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
   2. docker restart techreadout-app
+  3. Lookup Cache page -> Clear misses (once; most were caused by the Google block)
   No schema change, no migration, no rebuild.
 
 Verify
 ------
-  Re-import the Samsung 8GB PC3-14900R JSON on Import Specs. It should
-  create a new spec instead of "Skipped 1: Duplicate".
+  1. Locally: python -m pytest  -> 172 passed.
+  2. Watch the log while testing lookups:
+       docker logs -f --tail 0 techreadout-app 2>&1 | sed -u -E 's/token=[^&[:space:]"]+/token=***/g'
+  3. RAM lookup "ADATA XPG DDR4-2400 CL16": the log shows Newegg search, then
+     Amazon search picking XPG Z1 DDR4 2400 (AX4U240038G16-DRZ), with a
+     "cost 1 credit(s)" line per call. Result: DDR4, 2400, CL16, 16GB, 2 sticks.
+  4. RAM lookup "Team T-FORCE VULCAN Z 32GB DDR4-3200": found on Newegg (2 calls).
+  5. An ASUS motherboard lookup logs "ASUS official site skipped" and goes
+     straight to Newegg.
+  6. Sell 1 of a quantity-2 item: one Sold row + one remaining row, no error.
+  7. Lookup Settings -> Check Balance: "X of Y credits remaining", matching
+     the Scrape.Do dashboard.
+  8. Inventory Breakdown: sold/dead parts gone from the counts; a 2x16GB kit
+     shows 2 under Stick Size 16.
+  9. Open any build plan: the page loads. A plan with socket LGA 2011 no
+     longer lists LGA 2011-3 CPUs or X99 boards; a plan using 2 sticks from
+     an 8-stick row shows 2 sticks' worth of RAM.
+ 10. docker logs techreadout-app 2>&1 | grep -c "token="  (see Upgrade note)

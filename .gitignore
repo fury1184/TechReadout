@@ -100,9 +100,9 @@ tmp/
 *.xlsx
 *.xls
 
-# Keep public seed specification files
+# Keep public seed specification files. No blanket !app/seeds/** here:
+# it re-included app/seeds/__pycache__ (removed in v3.8.9).
 !app/seeds/
-!app/seeds/**
 !app/seeds/*.json
 !app/seeds/*.py
 
@@ -155,4 +155,4 @@ Desktop.ini
 # -------------------------
 *.diff
 *.patch
-PATCH_FILES.txt
+# PATCH_FILES.txt is a tracked release doc (see CLAUDE.md), so it is not ignored.

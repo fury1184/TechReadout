@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from app.scrapers.validation import extract_cpu_identity
+from app.scrapers.validation import extract_cpu_identity, extract_ram_capacity  # noqa: F401 (re-exported)
 
 
 _GENERIC_VENDOR_SUFFIXES = {
@@ -270,27 +270,6 @@ def extract_part_number(model: Optional[str]) -> Optional[str]:
         return None
     candidates.sort(reverse=True)
     return candidates[0][1]
-
-
-_RAM_KIT_RE = re.compile(r"\b(\d+)\s*[x×]\s*(\d+)\s*GB\b", re.IGNORECASE)
-_RAM_SIZE_RE = re.compile(r"\b(\d+)\s*GB\b", re.IGNORECASE)
-
-
-def extract_ram_capacity(model: Optional[str]) -> Optional[tuple[int, int]]:
-    """Return (module_count, gb_per_module) parsed from a RAM model string.
-
-    "2x8GB ..." -> (2, 8); "16GB 2Rx4 PC3-14900R" -> (1, 16).  Returns None
-    when no capacity is written, so callers can treat it as unknown rather
-    than as a mismatch.
-    """
-    text = model or ""
-    kit = _RAM_KIT_RE.search(text)
-    if kit:
-        return int(kit.group(1)), int(kit.group(2))
-    size = _RAM_SIZE_RE.search(text)
-    if size:
-        return 1, int(size.group(1))
-    return None
 
 
 def comparison_key(manufacturer: Optional[str], model: Optional[str]) -> str:

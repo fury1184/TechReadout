@@ -45,6 +45,8 @@ CREATE TABLE IF NOT EXISTS hardware_specs (
     ram_speed INT,
     ram_cas_latency VARCHAR(20),
     ram_modules INT,
+    ram_ecc TINYINT(1) NULL,          -- v3.5.4: 1=ECC, 0=Non-ECC, NULL=unknown
+    ram_module_type VARCHAR(50) NULL, -- v3.5.4: UDIMM, RDIMM, LRDIMM, SODIMM, ...
     
     -- Motherboard-specific
     mobo_socket VARCHAR(50),

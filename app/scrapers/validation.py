@@ -188,11 +188,177 @@ def cpu_models_compatible(query: str, candidate: str) -> bool:
         return True
     return candidate_id is not None and query_id == candidate_id
 
-def validate_result(query: str, result_model: str, component_type: str = None) -> bool:
+# ── RAM identity (v3.8.8) ─────────────────────────────────────────────────
+# Capacity, DDR generation, speed grade and ECC are identity for a memory
+# module, not scoring hints.  Each is parsed from free text and compared only
+# when BOTH sides state it: unknown never counts as a mismatch.
+
+_RAM_KIT_RE = re.compile(r"\b(\d+)\s*[x×]\s*(\d+)\s*GB\b", re.IGNORECASE)
+_RAM_SIZE_RE = re.compile(r"\b(\d+)\s*GB\b", re.IGNORECASE)
+_RAM_GEN_RE = re.compile(r"\b(?:DDR([2-5])L?|PC([2-5])L?(?=-\d))", re.IGNORECASE)
+_RAM_DDR_SPEED_RE = re.compile(r"\bDDR[2-5]L?\s*[- ]?\s*(\d{3,4})\b(?!\s*-?\s*pin)", re.IGNORECASE)
+_RAM_PC_RE = re.compile(r"\bPC[2-5]L?-(\d{4,5})", re.IGNORECASE)
+_RAM_MHZ_RE = re.compile(r"\b(\d{3,4})\s*(?:MHz|MT/s)\b", re.IGNORECASE)
+_RAM_NON_ECC_RE = re.compile(r"\bnon[\s-]?ecc\b", re.IGNORECASE)
+_RAM_ECC_RE = re.compile(r"\becc\b|\bl?rdimm\b|\bregistered\b|\bbuffered\s+ecc\b", re.IGNORECASE)
+
+# JEDEC data rates; PCx-NNNNN module ratings are bandwidth (MB/s) = rate × 8
+# and get snapped to the nearest of these (PC3-14900 -> 1866).
+_RAM_STANDARD_RATES = (
+    400, 533, 667, 800, 1066, 1333, 1600, 1866, 2133, 2400, 2666, 2933,
+    3200, 3600, 4000, 4400, 4800, 5200, 5600, 6000, 6400, 6800, 7200, 8000,
+)
+
+# Memory vendors recognizable in free text.  Used only to spot a conflict
+# when both sides name a vendor; OEM rebrands are why a vendor conflict
+# sends the match to review instead of rejecting it outright.
+_RAM_VENDORS = {
+    "a-tech": "atech", "atech": "atech", "adata": "adata", "apacer": "apacer",
+    "corsair": "corsair", "crucial": "crucial", "micron": "micron",
+    "g.skill": "gskill", "gskill": "gskill", "hynix": "skhynix",
+    "sk hynix": "skhynix", "innodisk": "innodisk", "kingston": "kingston",
+    "mushkin": "mushkin", "nemix": "nemix", "patriot": "patriot",
+    "pny": "pny", "samsung": "samsung", "silicon power": "siliconpower",
+    "teamgroup": "teamgroup", "team group": "teamgroup", "timetec": "timetec",
+    "transcend": "transcend", "oloy": "oloy", "nanya": "nanya",
+    "elpida": "elpida", "ramaxel": "ramaxel", "hp": "hp", "hpe": "hp",
+    "dell": "dell", "lenovo": "lenovo", "supermicro": "supermicro",
+}
+
+
+def extract_ram_capacity(text):
+    """(module_count, gb_per_module): "2x8GB" -> (2, 8), "16GB" -> (1, 16)."""
+    text = text or ""
+    kit = _RAM_KIT_RE.search(text)
+    if kit:
+        return int(kit.group(1)), int(kit.group(2))
+    size = _RAM_SIZE_RE.search(text)
+    if size:
+        return 1, int(size.group(1))
+    return None
+
+
+def _snap_rate(value):
+    nearest = min(_RAM_STANDARD_RATES, key=lambda r: abs(r - value))
+    return nearest if abs(nearest - value) <= nearest * 0.015 else None
+
+
+def extract_ram_generation(text):
+    """DDR generation as an int: "DDR4-2400" -> 4, "PC3-14900R" -> 3."""
+    m = _RAM_GEN_RE.search(text or "")
+    if not m:
+        return None
+    return int(m.group(1) or m.group(2))
+
+
+def extract_ram_speed(text):
+    """Data rate in MT/s. PC4-19200 and DDR4-2400 both give 2400."""
+    text = text or ""
+    m = _RAM_DDR_SPEED_RE.search(text)
+    if m and int(m.group(1)) >= 400:
+        return int(m.group(1))
+    m = _RAM_PC_RE.search(text)
+    if m:
+        value = int(m.group(1))
+        # DDR4 labels also use the rate directly: PC4-2400T, PC4-2666V.
+        if value < 5000:
+            return _snap_rate(value) or value
+        return _snap_rate(value / 8)
+    m = _RAM_MHZ_RE.search(text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def extract_ram_ecc(text):
+    """True for ECC/registered, False for Non-ECC, None when not stated."""
+    text = text or ""
+    if _RAM_NON_ECC_RE.search(text):
+        return False
+    if _RAM_ECC_RE.search(text):
+        return True
+    return None
+
+
+def extract_ram_vendor(text):
+    """Canonical vendor key when the text names a known memory vendor."""
+    lower = (text or "").casefold()
+    for name in sorted(_RAM_VENDORS, key=len, reverse=True):
+        if re.search(r"(?<![a-z0-9])" + re.escape(name) + r"(?![a-z0-9])", lower):
+            return _RAM_VENDORS[name]
+    return None
+
+
+def _vendor_key(manufacturer, text):
+    if manufacturer and manufacturer.strip():
+        known = extract_ram_vendor(manufacturer)
+        return known or re.sub(r"[^a-z0-9]+", "", manufacturer.casefold())
+    return extract_ram_vendor(text)
+
+
+def ram_capacity_conflict(query, candidate):
+    """True when both texts state a capacity and they can't be the same part.
+
+    When both give a kit ("2x16GB") the kits must match. When one side gives
+    only a size ("32GB"), it may mean the kit total or one stick, so it matches
+    either (v3.8.9; "32GB DDR4-3200" used to reject "32GB (2 x 16GB)").
+    """
+    a, b = extract_ram_capacity(query), extract_ram_capacity(candidate)
+    if a is None or b is None:
+        return False
+    a_kit, b_kit = bool(_RAM_KIT_RE.search(query or "")), bool(_RAM_KIT_RE.search(candidate or ""))
+    if a_kit == b_kit:
+        return a != b
+    kit, size = (a, b[1]) if a_kit else (b, a[1])
+    return size not in (kit[0] * kit[1], kit[1])
+
+
+def ram_spec_conflicts(query, candidate):
+    """Names of the identity fields that both texts state and that differ."""
+    conflicts = ["capacity"] if ram_capacity_conflict(query, candidate) else []
+    checks = (
+        ("generation", extract_ram_generation),
+        ("speed", extract_ram_speed),
+        ("ecc", extract_ram_ecc),
+    )
+    for name, extract in checks:
+        a, b = extract(query), extract(candidate)
+        if a is not None and b is not None and a != b:
+            conflicts.append(name)
+    return conflicts
+
+
+def ram_vendor_conflict(query, candidate, query_manufacturer=None,
+                        candidate_manufacturer=None):
+    a = _vendor_key(query_manufacturer, query)
+    b = _vendor_key(candidate_manufacturer, candidate)
+    return bool(a and b and a != b)
+
+
+def ram_candidate_decision(query, candidate, query_manufacturer=None,
+                           candidate_manufacturer=None):
+    """'reject' for a different part, 'review' for a vendor conflict, else 'ok'.
+
+    A spec conflict (capacity/generation/speed/ECC) means a different part.
+    A vendor conflict alone may be an OEM rebrand (HP-labelled Samsung), so it
+    is never auto-accepted but still offered for human review.
+    """
+    if ram_spec_conflicts(query, candidate):
+        return "reject"
+    if ram_vendor_conflict(query, candidate, query_manufacturer, candidate_manufacturer):
+        return "review"
+    return "ok"
+
+
+def validate_result(query: str, result_model: str, component_type: str = None,
+                    log: bool = True) -> bool:
     """
     Validate that the result actually matches the query.
     Returns True if the result is a valid match, False if it's a different model.
+    `log=False` silences the per-check messages (the result pickers screen
+    every search listing with this, v3.8.9).
     """
+    say = print if log else (lambda *args, **kwargs: None)
     if not result_model:
         return False
     
@@ -201,8 +367,17 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
         query = normalize_gpu_query(query)
 
     if component_type == 'CPU' and not cpu_models_compatible(query, result_model):
-        print(f"[Lookup] Validation failed: strict CPU identity mismatch '{query}' vs '{result_model}'")
+        say(f"[Lookup] Validation failed: strict CPU identity mismatch '{query}' vs '{result_model}'")
         return False
+
+    if component_type == 'RAM':
+        conflicts = ram_spec_conflicts(query, result_model)
+        if conflicts:
+            say(f"[Lookup] Validation failed: RAM {', '.join(conflicts)} mismatch '{query}' vs '{result_model}'")
+            return False
+        if ram_vendor_conflict(query, result_model):
+            say(f"[Lookup] Validation failed: RAM vendor mismatch '{query}' vs '{result_model}'")
+            return False
     
     query_norm = normalize_model_name(query)
     result_norm = normalize_model_name(result_model)
@@ -215,7 +390,7 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
     for key_id in key_ids:
         key_id_clean = key_id.replace(' ', '')
         if key_id_clean not in result_norm and key_id_clean not in result_lower:
-            print(f"[Lookup] Validation failed: '{key_id}' not found in result '{result_model}'")
+            say(f"[Lookup] Validation failed: '{key_id}' not found in result '{result_model}'")
             return False
     
     # Also check that major model number matches
@@ -225,7 +400,7 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
     
     for num in query_nums:
         if num not in result_model and num not in ''.join(result_nums):
-            print(f"[Lookup] Validation failed: model number '{num}' not found in result '{result_model}'")
+            say(f"[Lookup] Validation failed: model number '{num}' not found in result '{result_model}'")
             return False
     
     # Check that result doesn't have extra significant identifiers not in query
@@ -238,7 +413,7 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
             # Result has identifier not in query - might be wrong model
             # E.g., query "RTX 4070" returning "RTX 4070 Ti"
             # E.g., query "i7-9700" returning "i7-9700K"
-            print(f"[Lookup] Validation failed: result has '{rid}' not in query")
+            say(f"[Lookup] Validation failed: result has '{rid}' not in query")
             return False
     
     # Additional check for CPU suffix mismatch
@@ -257,15 +432,15 @@ def validate_result(query: str, result_model: str, component_type: str = None) -
             
             # Model numbers must match
             if query_model_num != result_model_num:
-                print(f"[Lookup] Validation failed: model number mismatch {query_model_num} vs {result_model_num}")
+                say(f"[Lookup] Validation failed: model number mismatch {query_model_num} vs {result_model_num}")
                 return False
             
             # Suffixes must match exactly (both empty, or both same)
             if query_suffix != result_suffix:
-                print(f"[Lookup] Validation failed: suffix mismatch '{query_suffix}' vs '{result_suffix}' (query: {query}, result: {result_model})")
+                say(f"[Lookup] Validation failed: suffix mismatch '{query_suffix}' vs '{result_suffix}' (query: {query}, result: {result_model})")
                 return False
     
-    print(f"[Lookup] Validation passed: '{query}' matches '{result_model}'")
+    say(f"[Lookup] Validation passed: '{query}' matches '{result_model}'")
     return True
 
 

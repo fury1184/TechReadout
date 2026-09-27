@@ -7,7 +7,10 @@ db = SQLAlchemy()
 migrate = Migrate()
 
 
-def create_app():
+def create_app(config=None):
+    """Build the app. `config` overrides settings; tests pass an in-memory
+    SQLite URI. Production (run.py) calls create_app() with no arguments.
+    """
     app = Flask(__name__)
     
     # Configuration
@@ -17,6 +20,8 @@ def create_app():
         'mysql+pymysql://techreadout:techreadout@localhost:3306/techreadout'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    if config:
+        app.config.update(config)
     
     # Initialize extensions
     db.init_app(app)
@@ -32,29 +37,31 @@ def create_app():
         }
 
     with app.app_context():
-        from sqlalchemy import text
-        db.session.execute(text("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                `key` VARCHAR(100) PRIMARY KEY,
-                `value` VARCHAR(255) NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """))
-        db.session.execute(text("""
-            CREATE TABLE IF NOT EXISTS lookup_cache (
-                id INTEGER PRIMARY KEY AUTO_INCREMENT,
-                cache_key VARCHAR(255) NOT NULL UNIQUE,
-                query VARCHAR(255) NOT NULL,
-                component_type VARCHAR(50) NOT NULL,
-                status VARCHAR(20) NOT NULL DEFAULT 'hit',
-                spec_id INTEGER NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                INDEX ix_lookup_cache_cache_key (cache_key),
-                CONSTRAINT fk_lookup_cache_spec FOREIGN KEY (spec_id) REFERENCES hardware_specs (id)
-            )
-        """))
-        db.session.commit()
+        # MariaDB-only DDL. Tests run the app on SQLite and use db.create_all().
+        if db.engine.dialect.name in ('mysql', 'mariadb'):
+            from sqlalchemy import text
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS app_settings (
+                    `key` VARCHAR(100) PRIMARY KEY,
+                    `value` VARCHAR(255) NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                )
+            """))
+            db.session.execute(text("""
+                CREATE TABLE IF NOT EXISTS lookup_cache (
+                    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+                    cache_key VARCHAR(255) NOT NULL UNIQUE,
+                    query VARCHAR(255) NOT NULL,
+                    component_type VARCHAR(50) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'hit',
+                    spec_id INTEGER NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX ix_lookup_cache_cache_key (cache_key),
+                    CONSTRAINT fk_lookup_cache_spec FOREIGN KEY (spec_id) REFERENCES hardware_specs (id)
+                )
+            """))
+            db.session.commit()
     
     # Register blueprints
     from app.routes import main, api, scraper, planner, backup, stats

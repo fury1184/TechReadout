@@ -125,6 +125,11 @@ def _socket_match(cpu_socket: Any, mobo_socket: Any) -> Optional[bool]:
     return left == right
 
 
+def socket_match(cpu_socket: Any, mobo_socket: Any) -> Optional[bool]:
+    """Public name for _socket_match (the build planner uses it since v3.8.9)."""
+    return _socket_match(cpu_socket, mobo_socket)
+
+
 def _form_factor_rank(value: Any) -> Optional[int]:
     if not value:
         return None
@@ -398,12 +403,35 @@ def check_inventory_items(items: Iterable[Any], requirements: Optional[Dict[str,
     }
 
 
+class _PlannedItem:
+    """An inventory row as seen by a build plan: every attribute comes from the
+    row except quantity, which is the plan's quantity."""
+
+    def __init__(self, item: Any, quantity: int):
+        self._item = item
+        self.quantity = quantity
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._item, name)
+
+
+def _planned_quantity(component: Any, inventory: Any) -> int:
+    """The plan's quantity, capped at what the inventory row actually holds."""
+    try:
+        planned = int(getattr(component, "quantity", 1) or 1)
+    except (TypeError, ValueError):
+        planned = 1
+    return max(1, min(planned, _qty(inventory)))
+
+
 def check_build_plan(plan: Any) -> Dict[str, Any]:
+    # v3.8.9: count the quantity on the plan, not the whole inventory row.
+    # 2 sticks taken from an 8-stick row used to count as 8.
     components = []
     for component in plan.components.all():
         inventory = getattr(component, "inventory", None)
         if inventory:
-            components.append(inventory)
+            components.append(_PlannedItem(inventory, _planned_quantity(component, inventory)))
 
     return check_inventory_items(
         components,

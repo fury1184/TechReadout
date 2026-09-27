@@ -10,7 +10,7 @@ from app.models import (
     BuildPlan, BuildPlanComponent
 )
 from sqlalchemy import func
-from app.compatibility import check_build_plan
+from app.compatibility import check_build_plan, socket_match
 
 bp = Blueprint('planner', __name__)
 
@@ -231,7 +231,9 @@ def check_availability(plan):
                 socket = item.hardware_spec.cpu_socket
             
             # Filter by socket if specified
-            if not plan.cpu_socket or (socket and plan.cpu_socket.lower() in socket.lower()):
+            # Exact canonical match (v3.8.9), same rule compatibility.py uses since
+            # 3.8.5. Substring matching let LGA 2011 plans list LGA 2011-3 parts.
+            if not plan.cpu_socket or socket_match(plan.cpu_socket, socket) is True:
                 results['cpu']['items'].append({
                     'id': item.id,
                     'name': item.display_name,
@@ -273,7 +275,9 @@ def check_availability(plan):
             if item.hardware_spec:
                 socket = item.hardware_spec.mobo_socket or item.hardware_spec.cpu_socket
             
-            if not plan.cpu_socket or (socket and plan.cpu_socket.lower() in socket.lower()):
+            # Exact canonical match (v3.8.9), same rule compatibility.py uses since
+            # 3.8.5. Substring matching let LGA 2011 plans list LGA 2011-3 parts.
+            if not plan.cpu_socket or socket_match(plan.cpu_socket, socket) is True:
                 results['motherboard']['items'].append({
                     'id': item.id,
                     'name': item.display_name,

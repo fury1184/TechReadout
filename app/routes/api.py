@@ -11,6 +11,9 @@ from app.name_normalization import (
 
 bp = Blueprint('api', __name__)
 
+# A saved "not found" blocks the web lookup for this long (v3.8.9; was 30 days).
+MISS_CACHE_DAYS = 7
+
 
 def _spec_to_dict(spec, source='database', confidence=100):
     """Serialize a HardwareSpec ORM object to the standard lookup response dict."""
@@ -136,7 +139,7 @@ def lookup_hardware():
         lookup_hardware as do_lookup, score_candidate,
         detect_component_type, resolve_motherboard_manufacturer,
     )
-    from app.scrapers.validation import cpu_models_compatible
+    from app.scrapers.validation import cpu_models_compatible, ram_candidate_decision
 
     REVIEW_THRESHOLD = 90
     OPENWEBUI_CONFIDENCE_CAP = 89  # Open WebUI (LLM) results never auto-accept, however well they score
@@ -259,6 +262,18 @@ def lookup_hardware():
             print(f"[DB Search] Rejected CPU mismatch: {query} != {spec.display_name}", flush=True)
             return
         conf = score_candidate(query, spec.display_name, spec.manufacturer, component_type)
+        if component_type == 'RAM':
+            # v3.8.8: capacity/generation/speed/ECC conflicts mean a different
+            # part (8GB ECC is not 8GB Non-ECC).  A vendor conflict alone may be
+            # an OEM rebrand, so it stays visible but can never auto-accept.
+            decision = ram_candidate_decision(
+                query, spec.display_name, manufacturer_hint, spec.manufacturer,
+            )
+            if decision == 'reject':
+                print(f"[DB Search] Rejected RAM mismatch: {query} != {spec.display_name}", flush=True)
+                return
+            if decision == 'review':
+                conf = min(conf, REVIEW_THRESHOLD - 1)
         d = _spec_to_dict(spec, source='database', confidence=conf)
         _seen_ids[spec.id] = d
         print(f"[DB Search] Candidate: {spec.display_name} → conf={conf}", flush=True)
@@ -321,8 +336,9 @@ def lookup_hardware():
         return jsonify(best)
 
     # Check cache for a previously recorded miss (only skip scraper if no DB candidates either)
-    cached = LookupCache.get_fresh(cache_key)
+    cached = LookupCache.get_fresh(cache_key, max_age_days=MISS_CACHE_DAYS)
     if cached and cached.status == 'miss' and not sorted_db:
+        print(f"[Lookup] Skipped: cached miss from {cached.updated_at:%Y-%m-%d}", flush=True)
         return jsonify({
             'found': False, 'message': 'No specs found for that model. Try manual entry.',
             'manufacturer_unknown': mobo_manufacturer_unknown,
@@ -394,6 +410,18 @@ def lookup_hardware():
     all_candidates = all_candidates[:3]
 
     if not all_candidates:
+        if result is not None:
+            # The web lookup hit an error or a bot-check page (v3.8.9). Don't
+            # remember that as "not found" -- a retry may well work.
+            problems = result.get('problems') or [result.get('error') or 'unknown error']
+            print(f"[Lookup] Not saving a miss: {'; '.join(problems)}", flush=True)
+            return jsonify({
+                'found': False,
+                'message': f"The lookup couldn't finish ({'; '.join(problems)}). "
+                           "Nothing was saved, so you can try again.",
+                'lookup_incomplete': True,
+                'manufacturer_unknown': mobo_manufacturer_unknown,
+            })
         LookupCache.store_miss(cache_key, query, component_type)
         db.session.commit()
         return jsonify({
@@ -579,7 +607,7 @@ def add_inventory():
         custom_manufacturer=data.get('custom_manufacturer'),
         quantity=qty,
         purchase_price=data.get('purchase_price'),
-        condition=data.get('condition', 'New'),
+        item_condition=data.get('condition', 'New'),
         location=data.get('location'),
         notes=data.get('notes'),
         status=data.get('status', 'Unverified')
@@ -662,52 +690,50 @@ def get_stats():
 
 @bp.route('/credits')
 def get_credits():
-    """Check Scrape.Do API credit balance."""
+    """Scrape.Do balance for the Lookup Settings page.
+
+    v3.8.9: reads Scrape.Do's usage endpoint (/info) instead of scraping
+    example.com, which spent a request per click and looked for headers
+    Scrape.Do doesn't send. /info allows 10 calls a minute. Error responses
+    never include exception text: requests embeds the token-bearing URL in it.
+    """
     import os
     import requests
-    
-    token = os.environ.get('SCRAPEDO_TOKEN')
+    from app.scrapers.lookup import redact_token
+
+    token = (os.environ.get('SCRAPEDO_TOKEN') or '').strip()
     scrapedo_enabled = AppSetting.get_bool('enable_scrapedo_fallback', True)
 
     if not token:
         return jsonify({'error': 'Scrape.Do token not configured'})
     if not scrapedo_enabled:
         return jsonify({'error': 'Scrape.Do fallback is disabled in settings'})
-    
+
     try:
-        # Scrape.Do returns credit info in response headers
-        # Make a minimal request to check
-        response = requests.get(
-            f'https://api.scrape.do?token={token}&url=https://example.com',
-            timeout=30
-        )
-        
-        # Check headers for credit info
-        remaining = response.headers.get('X-Credits-Remaining') or response.headers.get('x-credits-remaining')
-        used = response.headers.get('X-Credits-Used') or response.headers.get('x-credits-used')
-        
-        if remaining:
-            return jsonify({
-                'remaining': int(remaining),
-                'used_this_request': int(used) if used else 1,
-                'reset_date': 'Monthly'
-            })
-        
-        # If no headers, try to parse from response or estimate
-        if response.status_code == 200:
-            return jsonify({
-                'status': 'active',
-                'message': 'API is working but credit info not available in headers'
-            })
-        elif response.status_code in [402, 403]:
-            return jsonify({
-                'remaining': 0,
-                'error': 'Credits exhausted'
-            })
-        else:
-            return jsonify({
-                'error': f'API returned status {response.status_code}'
-            })
-            
-    except Exception as e:
-        return jsonify({'error': str(e)})
+        response = requests.get('https://api.scrape.do/info', params={'token': token}, timeout=15)
+    except requests.RequestException as exc:
+        print(f"[Credits] Scrape.Do /info request failed: {redact_token(exc)}", flush=True)
+        return jsonify({'error': "Couldn't reach Scrape.Do. Check the app's internet access and try again."})
+
+    if response.status_code == 429:
+        return jsonify({'error': 'Scrape.Do allows 10 balance checks a minute. Try again shortly.'})
+    if response.status_code != 200:
+        return jsonify({'error': f'Scrape.Do returned HTTP {response.status_code}. Check the token.'})
+
+    try:
+        info = response.json()
+        remaining = int(info['RemainingMonthlyRequest'])
+    except (ValueError, KeyError, TypeError):
+        return jsonify({'error': 'Unexpected response from Scrape.Do.'})
+
+    try:
+        monthly_limit = int(info.get('MaxMonthlyRequest'))
+    except (TypeError, ValueError):
+        monthly_limit = None
+
+    return jsonify({
+        'remaining': remaining,
+        'monthly_limit': monthly_limit,
+        'active': bool(info.get('IsActive', True)),
+        'reset_date': 'Monthly',
+    })

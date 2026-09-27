@@ -846,7 +846,7 @@ def inventory_sell(id):
                 quantity=sell_qty,
                 purchase_date=item.purchase_date,
                 purchase_price=item.purchase_price,
-                condition=item.item_condition,
+                item_condition=item.item_condition,
                 location=item.location,
                 notes=item.notes,
                 status='Sold',

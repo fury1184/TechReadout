@@ -159,9 +159,9 @@
                         Need: {{ plan.min_ram_gb }} GB | Available: {{ availability.ram.available }} GB
                     </div>
                     {% endif %}
-                    {% if availability.ram.items %}
+                    {% if availability.ram['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.ram.items[:3] %}
+                        {% for item in availability.ram['items'][:3] %}
                         <li>• {{ item.name }} ({{ item.quantity }}x)</li>
                         {% endfor %}
                     </ul>
@@ -175,19 +175,19 @@
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>GPU</strong>
                         {% if availability.gpu.status == 'ok' %}
-                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.gpu.items|length }} available</span>
+                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.gpu['items']|length }} available</span>
                         {% elif availability.gpu.status == 'insufficient' %}
                         <span class="badge bg-danger"><i class="bi bi-x"></i> None meet requirements</span>
                         {% else %}
-                        <span class="badge bg-secondary">{{ availability.gpu.items|length }} available</span>
+                        <span class="badge bg-secondary">{{ availability.gpu['items']|length }} available</span>
                         {% endif %}
                     </div>
                     {% if plan.min_vram_gb %}
                     <div class="small text-muted">Min VRAM: {{ plan.min_vram_gb }} GB</div>
                     {% endif %}
-                    {% if availability.gpu.items %}
+                    {% if availability.gpu['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.gpu.items[:3] %}
+                        {% for item in availability.gpu['items'][:3] %}
                         <li>• {{ item.name }} {% if item.vram_gb %}({{ item.vram_gb }}GB){% endif %}</li>
                         {% endfor %}
                     </ul>
@@ -201,17 +201,17 @@
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>CPU</strong>
                         {% if availability.cpu.status == 'ok' %}
-                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.cpu.items|length }} available</span>
+                        <span class="badge bg-success"><i class="bi bi-check"></i> {{ availability.cpu['items']|length }} available</span>
                         {% else %}
-                        <span class="badge bg-{{ 'warning' if availability.cpu.items else 'secondary' }}">{{ availability.cpu.items|length }} available</span>
+                        <span class="badge bg-{{ 'warning' if availability.cpu['items'] else 'secondary' }}">{{ availability.cpu['items']|length }} available</span>
                         {% endif %}
                     </div>
                     {% if plan.cpu_socket %}
                     <div class="small text-muted">Socket: {{ plan.cpu_socket }}</div>
                     {% endif %}
-                    {% if availability.cpu.items %}
+                    {% if availability.cpu['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.cpu.items[:3] %}
+                        {% for item in availability.cpu['items'][:3] %}
                         <li>• {{ item.name }} {% if item.cores %}({{ item.cores }}C/{{ item.threads }}T){% endif %}</li>
                         {% endfor %}
                     </ul>
@@ -224,13 +224,13 @@
                 <div class="border rounded p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>Motherboard</strong>
-                        <span class="badge bg-{{ 'success' if availability.motherboard.items else 'secondary' }}">
-                            {{ availability.motherboard.items|length }} available
+                        <span class="badge bg-{{ 'success' if availability.motherboard['items'] else 'secondary' }}">
+                            {{ availability.motherboard['items']|length }} available
                         </span>
                     </div>
-                    {% if availability.motherboard.items %}
+                    {% if availability.motherboard['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.motherboard.items[:3] %}
+                        {% for item in availability.motherboard['items'][:3] %}
                         <li>• {{ item.name }}</li>
                         {% endfor %}
                     </ul>
@@ -243,13 +243,13 @@
                 <div class="border rounded p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>Cooler</strong>
-                        <span class="badge bg-{{ 'success' if availability.cooler.items else 'secondary' }}">
-                            {{ availability.cooler.items|length }} available
+                        <span class="badge bg-{{ 'success' if availability.cooler['items'] else 'secondary' }}">
+                            {{ availability.cooler['items']|length }} available
                         </span>
                     </div>
-                    {% if availability.cooler.items %}
+                    {% if availability.cooler['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.cooler.items[:3] %}
+                        {% for item in availability.cooler['items'][:3] %}
                         <li>• {{ item.name }}</li>
                         {% endfor %}
                     </ul>
@@ -262,13 +262,13 @@
                 <div class="border rounded p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <strong>PSU</strong>
-                        <span class="badge bg-{{ 'success' if availability.psu.items else 'secondary' }}">
-                            {{ availability.psu.items|length }} available
+                        <span class="badge bg-{{ 'success' if availability.psu['items'] else 'secondary' }}">
+                            {{ availability.psu['items']|length }} available
                         </span>
                     </div>
-                    {% if availability.psu.items %}
+                    {% if availability.psu['items'] %}
                     <ul class="list-unstyled small mt-2 mb-0">
-                        {% for item in availability.psu.items[:3] %}
+                        {% for item in availability.psu['items'][:3] %}
                         <li>• {{ item.name }}</li>
                         {% endfor %}
                     </ul>

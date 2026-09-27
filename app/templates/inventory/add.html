@@ -267,7 +267,7 @@
                                 <div class="row g-2">
                                     <div class="col-md-3">
                                         <label class="form-label small">Total Capacity (GB)</label>
-                                        <input type="number" name="ram_capacity" class="form-control form-control-sm" placeholder="32">
+                                        <input type="number" name="ram_capacity" class="form-control form-control-sm" placeholder="e.g. 16">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small">Type</label>
@@ -280,15 +280,15 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small">Speed (MHz)</label>
-                                        <input type="number" name="ram_speed" class="form-control form-control-sm" placeholder="6000">
+                                        <input type="number" name="ram_speed" class="form-control form-control-sm" placeholder="e.g. 3200">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small">CAS Latency</label>
-                                        <input type="text" name="ram_timings" class="form-control form-control-sm" placeholder="CL30">
+                                        <input type="text" name="ram_timings" class="form-control form-control-sm" placeholder="e.g. CL16">
                                     </div>
                                     <div class="col-md-3">
                                         <label class="form-label small">Modules / Sticks</label>
-                                        <input type="number" name="ram_modules" id="ramModulesInput" class="form-control form-control-sm" min="1" placeholder="2">
+                                        <input type="number" name="ram_modules" id="ramModulesInput" class="form-control form-control-sm" min="1" placeholder="e.g. 2">
                                         <small class="text-muted">Inventory quantity counts physical sticks.</small>
                                     </div>
                                     <div class="col-md-3">
@@ -608,6 +608,9 @@ const ramModulesInput = document.getElementById('ramModulesInput');
 
 let lookupAttempted = false;
 let manualEntryMode = false;
+// What the user typed before a lookup replaced it, so Clear specs can undo a
+// rejected match instead of leaving its model/manufacturer/quantity behind.
+let preLookupInput = null;
 
 // ── Review modal state ────────────────────────────────────────────────────
 let _reviewModal = null;
@@ -768,6 +771,16 @@ lookedUpName.addEventListener('input', function() {
 clearSpecsBtn.addEventListener('click', function() {
     hardwareSpecId.value = '';
     specsDisplay.style.display = 'none';
+    lookedUpName.value = '';
+    clearManualSpecValues();
+    if (preLookupInput) {
+        modelInput.value = preLookupInput.model;
+        manufacturerInput.value = preLookupInput.manufacturer;
+        quantityInput.value = preLookupInput.quantity;
+        quantityHelp.textContent = 'Number of physical units.';
+        preLookupInput = null;
+    }
+    scheduleDuplicateCheck();
     manualEntryMode = true;
     showManualSpecs(true);
     showStatus('Specs cleared. Enter details manually below.', 'info');
@@ -822,6 +835,7 @@ inventoryForm.addEventListener('submit', async function(e) {
 });
 
 modelInput.addEventListener('input', function() {
+    preLookupInput = null;
     hardwareSpecId.value = '';
     clearManualSpecValues();
     specsDisplay.style.display = 'none';
@@ -841,6 +855,13 @@ async function doLookup(silent = false) {
 
     lookupAttempted = true;
     const ctName = _getCtName();
+    if (!hardwareSpecId.value) {
+        preLookupInput = {
+            model: modelInput.value,
+            manufacturer: manufacturerInput.value,
+            quantity: quantityInput.value,
+        };
+    }
 
     lookupBtn.disabled = true;
     lookupBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Looking up...';
@@ -1037,7 +1058,7 @@ function _getSourceBadge(source) {
         human_review: '<span class="badge bg-success ms-1">Confirmed</span>',
         openwebui:    '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1"><i class="bi bi-robot"></i> Open WebUI</span>',
     };
-    return map[source] || `<span class="badge bg-secondary ms-1">${source}</span>`;
+    return map[source] || `<span class="badge bg-secondary ms-1">${escapeHtml(source)}</span>`;
 }
 
 function showReviewModal(candidates, query, ctName) {
@@ -1075,14 +1096,15 @@ function showReviewModal(candidates, query, ctName) {
     const confirmBtn = document.getElementById('confirmReviewBtn');
     confirmBtn.disabled = true;
 
-    let html = `<p class="text-muted small mb-3">No high-confidence match found for <strong>${query}</strong>.
+    let html = `<p class="text-muted small mb-3">No high-confidence match found for <strong>${escapeHtml(query)}</strong>.
         Select the best candidate below, or use AI Import to generate specs from scratch.</p>
         <div class="d-flex flex-column gap-2">`;
 
     candidates.forEach((c, i) => {
         const conf = c.confidence || 0;
         const barClass = conf >= 90 ? 'bg-success' : conf >= 70 ? 'bg-warning' : 'bg-danger';
-        const preview = c.spec_summary || buildSpecsPreview(c).join(' · ') || '<em class="text-muted">No spec preview</em>';
+        const previewText = c.spec_summary || buildSpecsPreview(c).join(' · ');
+        const preview = previewText ? escapeHtml(previewText) : '<em class="text-muted">No spec preview</em>';
         const name = [c.manufacturer, c.model].filter(Boolean).join(' ') || 'Unknown';
 
         html += `
@@ -1093,7 +1115,7 @@ function showReviewModal(candidates, query, ctName) {
                            class="form-check-input flex-shrink-0 mt-1">
                     <div class="flex-grow-1 min-w-0">
                         <div class="d-flex align-items-center flex-wrap gap-1 mb-1">
-                            <strong class="text-truncate">${name}</strong>
+                            <strong class="text-truncate">${escapeHtml(name)}</strong>
                             ${_getSourceBadge(c.source)}
                         </div>
                         <div class="d-flex align-items-center gap-2 flex-wrap">

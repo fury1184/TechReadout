@@ -223,10 +223,14 @@ async function checkCredits() {
             div.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle"></i> ${data.error}</span>`;
         } else if (data.remaining !== undefined) {
             const color = data.remaining < 100 ? 'danger' : data.remaining < 500 ? 'warning' : 'success';
+            const limit = data.monthly_limit ? ` of ${data.monthly_limit.toLocaleString()}` : '';
+            const inactive = data.active === false
+                ? '<br><small class="text-danger">Subscription inactive. Check the Scrape.Do dashboard.</small>'
+                : '';
             div.innerHTML = `
                 <span class="badge bg-${color} fs-5">${data.remaining.toLocaleString()}</span>
-                <span class="text-muted">credits remaining</span>
-                <br><small class="text-muted">Resets: ${data.reset_date || 'Monthly'}</small>
+                <span class="text-muted">${limit} credits remaining</span>
+                <br><small class="text-muted">Resets: ${data.reset_date || 'Monthly'}</small>${inactive}
             `;
         } else {
             div.innerHTML = '<span class="text-warning">Could not retrieve balance</span>';

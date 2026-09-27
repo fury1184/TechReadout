@@ -16,9 +16,15 @@ on lookup_hardware() below and is, in summary:
     CPU (Intel): Intel ARK via Scrape.Do → CPU-Monkey → TechPowerUp via Scrape.Do → Open WebUI
     CPU (AMD):   AMD Official via Scrape.Do → CPU-Monkey → TechPowerUp via Scrape.Do → Open WebUI
     GPU:         TechPowerUp via Scrape.Do → Amazon via Scrape.Do → Open WebUI
-    Motherboard: ASUS official site (ASUS only) → Newegg → Amazon (niche/clone brands
-                 only: Machinist/Huananzhi/Jingyue) → Open WebUI
+    Motherboard: Newegg → Amazon (niche/clone brands only: Machinist/Huananzhi/
+                 Jingyue) → Open WebUI. (The ASUS official-site step is skipped
+                 since v3.8.9: it needed Google to find the page.)
+    RAM:         Newegg → Amazon via Scrape.Do → Open WebUI
     Other:       Amazon via Scrape.Do → Open WebUI
+
+No step goes through Google any more (v3.8.9): Google answers scrapers with a
+JavaScript-only page. Amazon and Newegg are searched directly, and a result's
+title must pass validate_result() before its product page is fetched.
 
 Open WebUI results are never auto-accepted regardless of score (api.py caps their
 confidence below the auto-accept threshold). Anything the whole chain misses
@@ -31,6 +37,7 @@ Public API (preserved for app/routes/api.py compatibility):
                     component_type='GPU') -> int
 """
 
+import json
 import os
 import re
 from contextvars import ContextVar
@@ -57,6 +64,8 @@ from app.scrapers.normalization import (
 from app.scrapers.scoring import enrich_scrape_result, score_candidate
 from app.scrapers.validation import (
     acceptable_scrape_hit as _acceptable_scrape_hit,
+    extract_ram_ecc,
+    extract_ram_speed,
     coerce_unknowns_to_none,
     has_minimum_specs,
     missing_required_fields,
@@ -110,6 +119,28 @@ def _get_lookup_budget():
     return budget if isinstance(budget, dict) else None
 
 
+def _note_problem(reason: str) -> None:
+    """Record that a source didn't run cleanly during this lookup (v3.8.9).
+
+    Network errors, Scrape.Do errors, bot-check pages, budget stops and
+    exceptions all count. A lookup with problems ends as 'lookup_incomplete'
+    instead of a clean miss, so api.py doesn't save it as "not found".
+    """
+    budget = _get_lookup_budget()
+    if budget is None:
+        return
+    problems = budget.setdefault('problems', [])
+    if reason not in problems:
+        problems.append(reason)
+        print(f"[Lookup] Problem: {reason}", flush=True)
+
+
+def lookup_problems() -> list:
+    """Problems recorded so far in the current lookup."""
+    budget = _get_lookup_budget()
+    return list(budget.get('problems', [])) if budget else []
+
+
 def _scrapedo_calls_remaining():
     """Return remaining paid calls for this lookup, or None outside a budget."""
     budget = _get_lookup_budget()
@@ -141,15 +172,181 @@ def end_scrapedo_sequence(name: str = None):
         budget['active_sequence'] = None
 
 
+_TOKEN_RE = re.compile(r'(token=)[^&\s\'"]+', re.IGNORECASE)
+
+
+def redact_token(text) -> str:
+    """Mask Scrape.Do tokens (token=...) in text headed for logs or the browser.
+
+    requests puts the full request URL, query string included, into its
+    exception messages and raise_for_status() errors, and every Scrape.Do API
+    URL carries ?token=... (v3.8.9).
+    """
+    return _TOKEN_RE.sub(r'\1***', str(text))
+
+
 def scrapedo_get(api_url: str, timeout: int = 60):
     budget = _get_lookup_budget()
     if budget:
         if budget['call_count'] >= budget['call_limit']:
             print(f"[Lookup Budget] Call limit reached ({budget['call_limit']}); blocking additional Scrape.Do requests")
+            _note_problem('Scrape.Do call limit reached')
             raise ScrapeDoBudgetExceeded()
         budget['call_count'] += 1
         print(f"[Lookup Budget] Scrape.Do call {budget['call_count']}/{budget['call_limit']}")
-    return requests.get(api_url, timeout=timeout)
+    try:
+        response = requests.get(api_url, timeout=timeout)
+    except requests.RequestException as exc:
+        # Same exception type so callers behave as before; `from None` keeps
+        # the original, token-bearing exception out of tracebacks.
+        try:
+            masked = type(exc)(redact_token(exc))
+        except Exception:
+            masked = requests.RequestException(redact_token(exc))
+        _note_problem(f"Scrape.Do request failed ({type(exc).__name__})")
+        raise masked from None
+    # raise_for_status() quotes response.url in its message. Nothing in this
+    # module reads response.url, so masking it here is safe.
+    response.url = redact_token(response.url)
+    cost = response.headers.get('Scrape.do-Request-Cost')
+    print(f"[Lookup] Scrape.Do HTTP {response.status_code}, cost {cost if cost is not None else '?'} credit(s)", flush=True)
+    if response.status_code in (401, 402, 403, 429) or response.status_code >= 500:
+        _note_problem(f"Scrape.Do HTTP {response.status_code}")
+    return response
+
+
+# ── Bot-check pages and search-result pickers (v3.8.9) ──────────────────
+# Google now answers scrapers with a JavaScript-only page, so no lookup path
+# goes through Google any more; Amazon and Newegg are searched directly.
+
+_BLOCK_MARKERS = (
+    ('Amazon', ('/errors/validateCaptcha', 'Enter the characters you see below',
+                'api-services-support@amazon.com')),
+    ('Google', ('/httpservice/retry/enablejs', 'Please click here if you are not redirected')),
+)
+
+
+def looks_blocked(html: str) -> Optional[str]:
+    """Name of the site whose bot-check or JavaScript-only page this is, else None."""
+    text = html or ''
+    for site, markers in _BLOCK_MARKERS:
+        if any(marker in text for marker in markers):
+            return site
+    return None
+
+
+def _blocked_page(html: str, what: str) -> bool:
+    """Log and record a bot-check page. True means don't use this response."""
+    site = looks_blocked(html)
+    if not site:
+        return False
+    print(f"[Lookup] {site} returned a bot-check page instead of the {what}", flush=True)
+    _note_problem(f"{site} returned a bot-check page")
+    return True
+
+
+_CAS_RE = re.compile(r'\bCL\s?-?(\d{1,2})\b', re.IGNORECASE)
+MIN_LISTING_SCORE = 60
+
+
+def _word_set(text: str) -> set:
+    return set(re.findall(r'[a-z0-9]+', (text or '').lower()))
+
+
+def pick_listing(query: str, component_type: str, listings: list, source: str) -> Optional[Dict]:
+    """Best search listing for the query, or None.
+
+    Every listing title must pass validate_result() -- the same check the
+    final result has to pass -- before we pay for its product page. Ties on
+    score go to a listing without a CAS-latency conflict, then to the one that
+    shares the most words with the query.
+    """
+    query_words = _word_set(query)
+    query_cas = _CAS_RE.search(query)
+    ranked = []
+    for listing in listings:
+        title = listing.get('title') or ''
+        if not validate_result(query, title, component_type, log=False):
+            continue
+        score = score_candidate(query, title, None, component_type)
+        if score < MIN_LISTING_SCORE:
+            continue
+        title_cas = _CAS_RE.search(title)
+        cas_ok = not (query_cas and title_cas and query_cas.group(1) != title_cas.group(1))
+        ranked.append((score, cas_ok, len(query_words & _word_set(title)), listing))
+    print(f"[Lookup] {source}: {len(listings)} listings, {len(ranked)} passed validation", flush=True)
+    if not ranked:
+        return None
+    ranked.sort(key=lambda entry: entry[:3], reverse=True)
+    score, _, _, best = ranked[0]
+    print(f"[Lookup] {source} pick: {best['title'][:100]} (score {score})", flush=True)
+    return best
+
+
+def parse_amazon_search_results(html: str) -> list:
+    """Organic listings on an Amazon search page: [{'asin', 'title', 'url'}].
+
+    Sponsored cards (AdHolder, or links through /sspa/) are skipped. The full
+    title is in [data-cy="title-recipe"]; the first h2 alone is sometimes just
+    the brand.
+    """
+    soup = BeautifulSoup(html or '', 'lxml')
+    listings = []
+    for card in soup.select('div[data-component-type="s-search-result"][data-asin]'):
+        asin = (card.get('data-asin') or '').strip()
+        if not re.fullmatch(r'[A-Z0-9]{10}', asin):
+            continue
+        if 'AdHolder' in (card.get('class') or []) or card.select_one('a[href*="/sspa/"]'):
+            continue
+        recipe = card.select_one('[data-cy="title-recipe"]')
+        if recipe:
+            title = recipe.get_text(' ', strip=True)
+        else:
+            title = ' '.join(h2.get_text(' ', strip=True) for h2 in card.select('h2'))
+        title = ' '.join(title.split())
+        if title:
+            listings.append({'asin': asin, 'title': title, 'url': f"https://www.amazon.com/dp/{asin}"})
+    return listings
+
+
+def amazon_search(query: str, component_type: str, extra_keywords: str = '') -> Optional[Dict]:
+    """Find the Amazon product page for a query with Amazon's own search.
+
+    Returns {'asin', 'title', 'url'} for the best listing, {'error':
+    'credits_exhausted'}, or None. Raises ScrapeDoBudgetExceeded like any
+    other Scrape.Do call. Replaces the Google "site:amazon.com" search.
+    """
+    terms = f"{query} {extra_keywords}".strip()
+    search_url = f"https://www.amazon.com/s?k={requests.utils.quote(terms)}"
+    print(f"[Lookup] Amazon search: {search_url}", flush=True)
+    api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(search_url)}"
+    response = scrapedo_get(api_url, timeout=60)
+    if response.status_code in (402, 403):
+        error_text = response.text.lower()
+        if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
+            print("[Lookup] Scrape.Do credits exhausted!", flush=True)
+            return {'error': 'credits_exhausted'}
+    response.raise_for_status()
+    if _blocked_page(response.text, 'search results'):
+        return None
+    return pick_listing(query, component_type, parse_amazon_search_results(response.text), 'Amazon search')
+
+
+def newegg_initial_state(html: str) -> Optional[Dict]:
+    """The JSON object Newegg assigns to window.__initialState__, or None.
+
+    Decodes exactly one JSON value from the assignment, so whatever script
+    follows it can't break the parse (a non-greedy '{.*?};' regex fails on
+    current Newegg pages with "Extra data").
+    """
+    match = re.search(r'window\.__initialState__\s*=\s*', html or '')
+    if not match:
+        return None
+    try:
+        state, _ = json.JSONDecoder().raw_decode(html, match.end())
+    except ValueError:
+        return None
+    return state if isinstance(state, dict) else None
 
 
 def scrapedo_fallback_enabled() -> bool:
@@ -1014,6 +1211,7 @@ def search_intel_ark(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Intel ARK error: {e}", flush=True)
+        _note_problem("Intel ARK error")
         return None
 
 
@@ -1281,7 +1479,13 @@ def lookup_hardware(
         CPU (Intel): Seed DB [caller] → Intel ARK via Scrape.Do → CPU-Monkey → TPU via Scrape.Do → Open WebUI
         CPU (AMD):   Seed DB [caller] → AMD Official via Scrape.Do → CPU-Monkey → TPU via Scrape.Do → Open WebUI
         GPU:         Seed DB [caller] → TPU via Scrape.Do → Amazon → Open WebUI
+        Motherboard: Seed DB [caller] → Newegg → Amazon (niche brands) → Open WebUI
+        RAM:         Seed DB [caller] → Newegg → Amazon via Scrape.Do → Open WebUI
         Other:       Seed DB [caller] → Amazon via Scrape.Do → Open WebUI
+
+    Returns a result dict, None for a clean miss, or an error dict. A chain that
+    hit errors, bot-check pages or budget stops returns {'error':
+    'lookup_incomplete', 'problems': [...]} so api.py doesn't save a miss.
 
     Open WebUI results are never auto-accepted regardless of score —
     api.py caps their confidence below the auto-accept threshold so they
@@ -1320,6 +1524,7 @@ def lookup_hardware(
                     print("[Lookup] Hit: CPU-Monkey", flush=True)
                     return enrich_scrape_result(query, result, 'CPU')
             print("[Lookup] Scrape.Do disabled or token missing; continuing to Open WebUI", flush=True)
+            _note_problem('Scrape.Do disabled or token missing')
         else:
             try:
                 if component_type == 'GPU':
@@ -1447,7 +1652,8 @@ def lookup_hardware(
                 else:
                     # RAM, Storage, Cooler, Case, Fan, NIC, Sound Card, etc.
                     if start_scrapedo_sequence(f'generic:{component_type.lower()}'):
-                        print(f"[Lookup] Step 1: Scrape.Do Amazon (generic {component_type})", flush=True)
+                        sources = 'Newegg, then Amazon' if component_type == 'RAM' else 'Amazon'
+                        print(f"[Lookup] Step 1: Scrape.Do {sources} (generic {component_type})", flush=True)
                         result = search_generic(query, component_type)
                         if _is_terminal_error(result):
                             return result
@@ -1469,6 +1675,10 @@ def lookup_hardware(
                 print("[Lookup] Hit: Open WebUI", flush=True)
                 return enrich_scrape_result(query, result, component_type)
 
+        problems = lookup_problems()
+        if problems:
+            print(f"[Lookup] No hit for '{query}', and the lookup didn't run cleanly; not a clean miss", flush=True)
+            return {'error': 'lookup_incomplete', 'problems': problems}
         print(f"[Lookup] No hit for '{query}'", flush=True)
         return None
     finally:
@@ -1563,12 +1773,15 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
 
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         return parse_techpowerup_detail(detail_response.text, component_type, detail_url)
 
     except ScrapeDoBudgetExceeded:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Scrape.Do error: {e}", flush=True)
+        _note_problem("Scrape.Do error")
         return None
 
 
@@ -1767,33 +1980,12 @@ def search_amazon_gpu(query: str) -> Optional[Dict]:
         return None
     
     try:
-        google_url = f"https://www.google.com/search?q=site:amazon.com+{requests.utils.quote(query)}+graphics+card"
-        print(f"[Lookup] Amazon GPU search: {google_url}")
-        
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
-        response = scrapedo_get(api_url, timeout=60)
-        
-        if response.status_code in [402, 403]:
-            error_text = response.text.lower()
-            if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                return {'error': 'credits_exhausted'}
-        
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'lxml')
-        
-        amazon_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            if 'amazon.com' in href and '/dp/' in href:
-                match = re.search(r'(https?://(?:www\.)?amazon\.com/[^\s&"]*?/dp/[A-Z0-9]{10})', href)
-                if match:
-                    amazon_link = match.group(1)
-                    break
-        
-        if not amazon_link:
-            print("[Lookup] No Amazon GPU product link found")
-            return None
+        # v3.8.9: Amazon's own search replaces the Google step, which now
+        # returns a JavaScript-only page with no results.
+        hit = amazon_search(query, 'GPU', 'graphics card')
+        if hit is None or hit.get('error'):
+            return hit
+        amazon_link = hit['url']
         
         print(f"[Lookup] Amazon GPU product: {amazon_link}")
 
@@ -1807,6 +1999,8 @@ def search_amazon_gpu(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
         
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         
         return parse_amazon_gpu(detail_response.text, amazon_link)
         
@@ -1814,6 +2008,7 @@ def search_amazon_gpu(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Amazon GPU search error: {e}")
+        _note_problem("Amazon GPU search error")
         return None
 
 
@@ -1894,33 +2089,12 @@ def search_amazon_cpu(query: str) -> Optional[Dict]:
         return None
     
     try:
-        google_url = f"https://www.google.com/search?q=site:amazon.com+{requests.utils.quote(query)}+processor+cpu"
-        print(f"[Lookup] Amazon CPU search: {google_url}")
-        
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
-        response = scrapedo_get(api_url, timeout=60)
-        
-        if response.status_code in [402, 403]:
-            error_text = response.text.lower()
-            if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                return {'error': 'credits_exhausted'}
-        
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'lxml')
-        
-        amazon_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            if 'amazon.com' in href and '/dp/' in href:
-                match = re.search(r'(https?://(?:www\.)?amazon\.com/[^\s&"]*?/dp/[A-Z0-9]{10})', href)
-                if match:
-                    amazon_link = match.group(1)
-                    break
-        
-        if not amazon_link:
-            print("[Lookup] No Amazon CPU product link found")
-            return None
+        # v3.8.9: Amazon's own search replaces the Google step, which now
+        # returns a JavaScript-only page with no results.
+        hit = amazon_search(query, 'CPU', 'processor cpu')
+        if hit is None or hit.get('error'):
+            return hit
+        amazon_link = hit['url']
         
         print(f"[Lookup] Amazon CPU product: {amazon_link}")
         
@@ -1933,6 +2107,8 @@ def search_amazon_cpu(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
         
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         
         return parse_amazon_cpu(detail_response.text, amazon_link)
         
@@ -1940,6 +2116,7 @@ def search_amazon_cpu(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Amazon CPU search error: {e}")
+        _note_problem("Amazon CPU search error")
         return None
 
 
@@ -2040,8 +2217,16 @@ def search_generic(query: str, component_type: str) -> Optional[Dict]:
     Used as fallback when primary sources fail.
     """
     print(f"[Lookup] Trying generic search for {component_type}: {query}")
-    
-    # Try Amazon first (good for most components)
+
+    # v3.8.9: RAM tries Newegg first (structured specs, no rendering), then Amazon.
+    if component_type == 'RAM':
+        result = search_ram_newegg(query)
+        if result and result.get('error') in ('credits_exhausted', 'scrapedo_budget_exhausted'):
+            return result
+        if _acceptable_scrape_hit(query, result, 'RAM'):
+            return result
+
+    # Amazon (every generic type; RAM falls back to it)
     result = search_amazon_generic(query, component_type)
     if result:
         if result.get('error') == 'credits_exhausted':
@@ -2071,37 +2256,12 @@ def search_amazon_generic(query: str, component_type: str) -> Optional[Dict]:
         }
         extra_keywords = type_keywords.get(component_type, component_type)
         
-        google_url = f"https://www.google.com/search?q=site:amazon.com+{requests.utils.quote(query)}+{requests.utils.quote(extra_keywords)}"
-        
-        print(f"[Lookup] Generic Amazon search: {google_url}")
-        
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
-        response = scrapedo_get(api_url, timeout=60)
-        
-        # Check for credit exhaustion
-        if response.status_code in [402, 403]:
-            error_text = response.text.lower()
-            if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                print("[Lookup] Scrape.Do credits exhausted!")
-                return {'error': 'credits_exhausted'}
-        
-        response.raise_for_status()
-        
-        # Parse Google results for Amazon product link
-        soup = BeautifulSoup(response.text, 'lxml')
-        
-        amazon_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            if 'amazon.com' in href and '/dp/' in href:
-                match = re.search(r'(https?://(?:www\.)?amazon\.com/[^\s&"]*?/dp/[A-Z0-9]{10})', href)
-                if match:
-                    amazon_link = match.group(1)
-                    break
-        
-        if not amazon_link:
-            print("[Lookup] No Amazon product link found")
-            return None
+        # v3.8.9: Amazon's own search replaces the Google step, which now
+        # returns a JavaScript-only page with no results.
+        hit = amazon_search(query, component_type, extra_keywords)
+        if hit is None or hit.get('error'):
+            return hit
+        amazon_link = hit['url']
         
         print(f"[Lookup] Amazon product: {amazon_link}")
         
@@ -2117,6 +2277,8 @@ def search_amazon_generic(query: str, component_type: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
         
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         
         return parse_amazon_generic(detail_response.text, amazon_link, component_type)
         
@@ -2124,7 +2286,71 @@ def search_amazon_generic(query: str, component_type: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Generic Amazon search error: {e}")
+        _note_problem("Generic Amazon search error")
         return None
+
+
+_KIT_RE = re.compile(r'\b(\d+)\s*[x\u00d7]\s*(\d+)\s*GB\b', re.IGNORECASE)
+
+
+def _apply_amazon_ram_specs(specs: Dict, raw: Dict, title: str) -> None:
+    """RAM fields from an Amazon product's spec table (raw) and title (v3.8.9).
+
+    The table gives e.g. ram_memory_technology 'DDR4', memory_speed '2400 MHz',
+    column_address_strobe_latency '16', ram_size '16 GB' (the kit total) and
+    number_of_items '2'. A kit in the title ('16GB (2x8GB)') wins for size and
+    stick count. Nothing is guessed: fields neither source states stay unset.
+    """
+    def table(*keys):
+        for key in keys:
+            value = str(raw.get(key) or '').strip()
+            if value:
+                return value
+        return ''
+
+    generation = (re.search(r'\bDDR\s?(\d)\b', table('ram_memory_technology', 'memory_generation', 'memory_technology'), re.IGNORECASE)
+                  or re.search(r'\bDDR\s?(\d)\b', title, re.IGNORECASE))
+    if generation:
+        specs['ram_type'] = f"DDR{generation.group(1)}"
+
+    speed = extract_ram_speed(table('memory_speed', 'data_transfer_rate')) or extract_ram_speed(title)
+    if speed:
+        specs['ram_speed'] = speed
+
+    cas = (re.search(r'(\d{1,2})', table('column_address_strobe_latency', 'cas_latency'))
+           or _CAS_RE.search(title))
+    if cas:
+        specs['ram_cas_latency'] = f"CL{cas.group(1)}"
+
+    kit = _KIT_RE.search(title)
+    table_size = re.search(r'(\d+)\s*GB', table('ram_size', 'computer_memory_size', 'memory_storage_capacity'), re.IGNORECASE)
+    if kit:
+        specs['ram_modules'] = int(kit.group(1))
+        specs['ram_size'] = int(kit.group(1)) * int(kit.group(2))
+    elif table_size:
+        specs['ram_size'] = int(table_size.group(1))
+        items = re.fullmatch(r'\s*(\d{1,2})\s*', table('number_of_items'))
+        if items and 1 <= int(items.group(1)) <= 16:
+            specs['ram_modules'] = int(items.group(1))
+
+    ecc = extract_ram_ecc(title)
+    if ecc is not None:
+        specs['ram_ecc'] = ecc
+
+    form = f"{table('memory_form_factor', 'form_factor')} {title}".lower()
+    if 'so-dimm' in form or 'sodimm' in form:
+        specs['ram_module_type'] = 'SODIMM'
+    elif 'lrdimm' in form or 'load reduced' in form:
+        specs['ram_module_type'] = 'LRDIMM'
+    elif 'rdimm' in form or re.search(r'\bregistered\b', form):
+        specs['ram_module_type'] = 'RDIMM'
+    elif 'udimm' in form or 'unbuffered' in form:
+        specs['ram_module_type'] = 'UDIMM'
+
+    if not specs.get('manufacturer'):
+        brand = table('brand', 'manufacturer')
+        if brand:
+            specs['manufacturer'] = brand
 
 
 def parse_amazon_generic(html: str, url: str, component_type: str) -> Optional[Dict]:
@@ -2184,29 +2410,11 @@ def parse_amazon_generic(html: str, url: str, component_type: str) -> Optional[D
     
     # Component-specific parsing
     if component_type == 'RAM':
-        # Capacity
-        match = re.search(r'(\d+)\s*gb', page_text)
-        if match:
-            specs['ram_size'] = int(match.group(1))
-        
-        # Type
-        if 'ddr5' in page_text:
-            specs['ram_type'] = 'DDR5'
-        elif 'ddr4' in page_text:
-            specs['ram_type'] = 'DDR4'
-        elif 'ddr3' in page_text:
-            specs['ram_type'] = 'DDR3'
-        
-        # Speed
-        match = re.search(r'(\d{4,5})\s*mhz', page_text)
-        if match:
-            specs['ram_speed'] = int(match.group(1))
-        
-        # CAS Latency
-        match = re.search(r'cl(\d{2})', page_text)
-        if match:
-            specs['ram_cas_latency'] = f"CL{match.group(1)}"
-    
+        # v3.8.9: only this product's spec table and title. The page also
+        # lists other products (ads, "customers also bought"), and searching the
+        # whole page picked up their DDR generation and CAS latency.
+        _apply_amazon_ram_specs(specs, raw, specs.get('model') or '')
+
     elif component_type == 'Storage':
         # Type
         if 'nvme' in page_text:
@@ -2385,6 +2593,7 @@ def search_motherboard(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Motherboard search error: {e}")
+        _note_problem("Motherboard search error")
         return None
 
 
@@ -2413,23 +2622,17 @@ def search_motherboard_newegg(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
 
         response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, 'lxml')
-
-        newegg_link = None
-        # TODO(live-validation): confirm this selector against a real search-results
-        # page — built from the product-detail page structure, not yet tested
-        # against Newegg's search-results markup.
-        for link in soup.select('a.item-title, a[href*="/p/N82E"]'):
-            href = link.get('href', '')
-            match = re.search(r'(https?://(?:www\.)?newegg\.com/[^\s"]*?/p/N82E\d+)', href)
-            if match:
-                newegg_link = match.group(1)
-                break
-
-        if not newegg_link:
-            print("[Lookup] No Newegg product link found")
+        if _blocked_page(response.text, 'search results'):
             return None
+
+        # v3.8.9: pick from Newegg's real result list with a title check. The
+        # first product link on the page is a sponsored-brand ad whenever the
+        # search finds nothing, so taking it saved the wrong board's specs.
+        pick = pick_listing(query, 'Motherboard', parse_newegg_search_results(response.text), 'Newegg search')
+        if not pick:
+            print("[Lookup] No matching Newegg motherboard")
+            return None
+        newegg_link = pick['url']
 
         print(f"[Lookup] Newegg product: {newegg_link}")
 
@@ -2445,6 +2648,8 @@ def search_motherboard_newegg(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
 
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
 
         return parse_newegg_motherboard(detail_response.text, newegg_link)
 
@@ -2452,6 +2657,7 @@ def search_motherboard_newegg(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Newegg motherboard error: {e}")
+        _note_problem("Newegg motherboard error")
         return None
 
 
@@ -2475,9 +2681,10 @@ def parse_newegg_motherboard(html: str, url: str) -> Optional[Dict]:
 
     flat = {}
     try:
-        match = re.search(r'window\.__initialState__\s*=\s*(\{.*?\});', html, re.S)
-        if match:
-            state = json.loads(match.group(1))
+        # v3.8.9: the old non-greedy regex failed on current pages ("Extra
+        # data"), so every parse fell back to the spec-table scrape.
+        state = newegg_initial_state(html)
+        if state:
             item = state.get('ItemDetail', {})
             manufacturer = (
                 item.get('ItemManufactory', {}).get('Manufactory')
@@ -2492,7 +2699,7 @@ def parse_newegg_motherboard(html: str, url: str) -> Optional[Dict]:
                     val = (prop.get('Value') or '').strip()
                     if key and val:
                         flat[key] = val
-            model = item.get('ItemName') or item.get('Title')
+            model = item.get('ItemName') or item.get('Title') or (item.get('Description') or {}).get('Title')
             if model:
                 specs['model'] = model.strip()
     except Exception as e:
@@ -2595,75 +2802,156 @@ def parse_newegg_motherboard(html: str, url: str) -> Optional[Dict]:
     return None
 
 
-def search_motherboard_asus_official(query: str) -> Optional[Dict]:
-    """Search ASUS's own site for motherboard specs (Step 1 of the mobo chain,
-    only attempted when detect_motherboard_manufacturer() resolves to 'asus').
+def _newegg_module_type(type_text: str, buffered: str) -> Optional[str]:
+    """UDIMM / RDIMM / LRDIMM / SODIMM from Newegg's 'Type' and
+    'Buffered/Registered' values ('288-Pin PC RAM' + 'Unbuffered' -> UDIMM)."""
+    type_lower, buffered_lower = (type_text or '').lower(), (buffered or '').lower()
+    if 'so-dimm' in type_lower or 'sodimm' in type_lower or re.search(r'\b(204|260|262)-pin', type_lower):
+        return 'SODIMM'
+    if 'load reduced' in buffered_lower or 'lrdimm' in type_lower:
+        return 'LRDIMM'
+    if 'registered' in buffered_lower and 'unbuffered' not in buffered_lower:
+        return 'RDIMM'
+    if 'unbuffered' in buffered_lower or re.search(r'\b(240|288)-pin', type_lower):
+        return 'UDIMM'
+    return None
 
-    Discovery still goes through a Google site:asus.com search (the
-    manufacturer-site scaffolding already in get_search_url/get_manufacturer_site
-    was built for this but never wired to a parser — see get_search_url's
-    docstring). The result URL is normalized to the /techspec/ subpage, which
-    is where the spec payload lives.
+
+def parse_newegg_ram(html: str, url: str) -> Optional[Dict]:
+    """Parse a Newegg memory product page from its embedded data (v3.8.9).
+
+    Specs are Key/Value pairs in ItemDetail.DetailSpecificationObject.Groups
+    ('Model', 'Details', ...); the full title is ItemDetail.Description.Title.
+    Capacity is the kit total ('32GB (2 x 16GB)' -> ram_size 32, 2 modules),
+    matching how TechReadOut stores RAM kits.
     """
-    if not SCRAPEDO_TOKEN:
-        print("[Lookup] ASUS official site lookup requires Scrape.Do")
+    state = newegg_initial_state(html) or {}
+    item = state.get('ItemDetail') or {}
+    description = item.get('Description') or {}
+    flat = {}
+    for group in (item.get('DetailSpecificationObject') or {}).get('Groups') or []:
+        for prop in group.get('Properties') or []:
+            key = (prop.get('Key') or '').strip()
+            value = (prop.get('Value') or '').strip()
+            if key and value:
+                flat[key] = value
+    model = (description.get('Title') or description.get('ProductName') or item.get('Title') or '').strip()
+    if not model or not flat:
         return None
 
+    specs = {'source': 'newegg', 'source_url': url, 'component_type': 'RAM', 'model': model, 'raw_data': flat}
+    manufacturer = ((item.get('ItemManufactory') or {}).get('Manufactory') or flat.get('Brand') or '').strip()
+    if manufacturer:
+        specs['manufacturer'] = manufacturer
+
+    capacity = flat.get('Capacity', '')
+    kit = re.search(r'(\d+)\s*GB\s*\(\s*(\d+)\s*x\s*\d+\s*GB\s*\)', capacity, re.IGNORECASE)
+    single = re.search(r'(\d+)\s*GB', capacity, re.IGNORECASE)
+    if kit:
+        specs['ram_size'], specs['ram_modules'] = int(kit.group(1)), int(kit.group(2))
+    elif single:
+        specs['ram_size'], specs['ram_modules'] = int(single.group(1)), 1
+
+    speed = re.search(r'\b(DDR\d)\s*(\d{3,5})', flat.get('Speed', ''), re.IGNORECASE)
+    if speed:
+        specs['ram_type'], specs['ram_speed'] = speed.group(1).upper(), int(speed.group(2))
+    else:
+        generation = re.search(r'\bDDR\d\b', f"{flat.get('Type', '')} {model}", re.IGNORECASE)
+        if generation:
+            specs['ram_type'] = generation.group(0).upper()
+
+    cas = re.search(r'(\d{1,2})', flat.get('CAS Latency', ''))
+    if cas:
+        specs['ram_cas_latency'] = f"CL{cas.group(1)}"
+
+    ecc = flat.get('ECC', '').strip().lower()
+    if ecc in ('yes', 'no'):
+        specs['ram_ecc'] = ecc == 'yes'
+
+    module_type = _newegg_module_type(flat.get('Type', ''), flat.get('Buffered/Registered', ''))
+    if module_type:
+        specs['ram_module_type'] = module_type
+    return specs
+
+
+def parse_newegg_search_results(html: str) -> list:
+    """Real results on a Newegg search page: [{'item', 'title', 'url'}].
+
+    Reads the Products list from the page's embedded data rather than the HTML
+    links: when a search finds nothing, the only product links on the page
+    belong to a sponsored-brand ad. Listings without a standard Newegg item
+    number (20-331-618 -> N82E16820331618) are skipped rather than guessed.
+    """
+    state = newegg_initial_state(html) or {}
+    listings = []
+    for product in state.get('Products') or []:
+        if product.get('SponsoredMsg'):
+            continue
+        cell = product.get('ItemCell') or {}
+        description = cell.get('Description') or {}
+        title = ' '.join((description.get('Title') or '').split())
+        digits = (cell.get('Item') or '').replace('-', '').strip()
+        if not title or not re.fullmatch(r'\d{8}', digits):
+            continue
+        slug = (description.get('UrlKeywords') or 'product').strip('/')
+        listings.append({'item': cell.get('Item'), 'title': title,
+                         'url': f"https://www.newegg.com/{slug}/p/N82E168{digits}"})
+    return listings
+
+
+def search_ram_newegg(query: str) -> Optional[Dict]:
+    """Newegg lookup for RAM (v3.8.9): search, pick the result that matches the
+    query, then read the product page's embedded specs. No render=true needed,
+    so a hit costs 2 credits."""
+    if not SCRAPEDO_TOKEN:
+        print("[Lookup] Newegg RAM lookup requires Scrape.Do", flush=True)
+        return None
     try:
-        google_url = f"https://www.google.com/search?q=site:asus.com+{requests.utils.quote(query)}+motherboard+techspec"
-        print(f"[Lookup] ASUS official site search: {google_url}")
-
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
+        search_url = f"https://www.newegg.com/p/pl?d={requests.utils.quote(query)}"
+        print(f"[Lookup] Newegg RAM search: {search_url}", flush=True)
+        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(search_url)}"
         response = scrapedo_get(api_url, timeout=60)
-
-        if response.status_code in [402, 403]:
+        if response.status_code in (402, 403):
             error_text = response.text.lower()
             if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                print("[Lookup] Scrape.Do credits exhausted!")
+                print("[Lookup] Scrape.Do credits exhausted!", flush=True)
                 return {'error': 'credits_exhausted'}
-
         response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, 'lxml')
-
-        asus_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            match = re.search(r'(https?://(?:www\.)?asus\.com/[^\s&"]*?/motherboards[^\s&"]*)', href)
-            if match:
-                asus_link = match.group(1).rstrip('/')
-                break
-
-        if not asus_link:
-            print("[Lookup] No ASUS product link found")
+        if _blocked_page(response.text, 'search results'):
             return None
-
-        # Normalize to the techspec subpage, where the spec payload lives.
-        asus_link = re.sub(r'/(techspec|overview|design|gallery|innovation)$', '', asus_link)
-        asus_link = f"{asus_link}/techspec/"
-
-        print(f"[Lookup] ASUS official product: {asus_link}")
-
-        # No render=true — confirmed the spec payload is present in raw HTML
-        # (Nuxt __NUXT_DATA__) on a plain fetch.
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(asus_link)}"
+        pick = pick_listing(query, 'RAM', parse_newegg_search_results(response.text), 'Newegg search')
+        if not pick:
+            return None
+        print(f"[Lookup] Newegg product: {pick['url']}", flush=True)
+        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(pick['url'])}"
         detail_response = scrapedo_get(detail_api_url, timeout=60)
-
-        if detail_response.status_code in [402, 403]:
+        if detail_response.status_code in (402, 403):
             error_text = detail_response.text.lower()
             if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                print("[Lookup] Scrape.Do credits exhausted!")
+                print("[Lookup] Scrape.Do credits exhausted!", flush=True)
                 return {'error': 'credits_exhausted'}
-
         detail_response.raise_for_status()
-
-        return parse_asus_official_motherboard(detail_response.text, asus_link)
-
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
+        return parse_newegg_ram(detail_response.text, pick['url'])
     except ScrapeDoBudgetExceeded:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
-        print(f"[Lookup] ASUS official site error: {e}")
+        print(f"[Lookup] Newegg RAM error: {e}", flush=True)
+        _note_problem("Newegg RAM error")
         return None
+
+
+def search_motherboard_asus_official(query: str) -> Optional[Dict]:
+    """Retired in v3.8.9; kept as a no-op so callers don't change.
+
+    This step found the ASUS product page through a Google search, and Google
+    now returns a JavaScript-only page to scrapers. ASUS boards go straight to
+    Newegg. parse_asus_official_motherboard() stays for when there's a direct
+    way to find ASUS product pages.
+    """
+    print("[Lookup] ASUS official site skipped (it needs Google to find the page)", flush=True)
+    return None
 
 
 def parse_asus_official_motherboard(html: str, url: str) -> Optional[Dict]:
@@ -2806,38 +3094,12 @@ def search_motherboard_amazon(query: str) -> Optional[Dict]:
 
     try:
         # Google site search for Amazon product page
-        google_url = f"https://www.google.com/search?q=site:amazon.com+{requests.utils.quote(query)}+motherboard"
-        
-        print(f"[Lookup] Motherboard Amazon search: {google_url}")
-        
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
-        response = scrapedo_get(api_url, timeout=60)
-        
-        # Check for credit exhaustion
-        if response.status_code in [402, 403]:
-            error_text = response.text.lower()
-            if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                print("[Lookup] Scrape.Do credits exhausted!")
-                return {'error': 'credits_exhausted'}
-        
-        response.raise_for_status()
-        
-        # Parse Google results for Amazon product link
-        soup = BeautifulSoup(response.text, 'lxml')
-        
-        amazon_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            # Look for Amazon product pages (dp = detail page)
-            if 'amazon.com' in href and '/dp/' in href:
-                match = re.search(r'(https?://(?:www\.)?amazon\.com/[^\s&"]*?/dp/[A-Z0-9]{10})', href)
-                if match:
-                    amazon_link = match.group(1)
-                    break
-        
-        if not amazon_link:
-            print("[Lookup] No Amazon product link found")
-            return None
+        # v3.8.9: Amazon's own search replaces the Google step, which now
+        # returns a JavaScript-only page with no results.
+        hit = amazon_search(query, 'Motherboard', 'motherboard')
+        if hit is None or hit.get('error'):
+            return hit
+        amazon_link = hit['url']
         
         print(f"[Lookup] Amazon product: {amazon_link}")
         
@@ -2854,6 +3116,8 @@ def search_motherboard_amazon(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
         
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         
         return parse_amazon_motherboard(detail_response.text, amazon_link)
         
@@ -2861,6 +3125,7 @@ def search_motherboard_amazon(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] Amazon motherboard error: {e}")
+        _note_problem("Amazon motherboard error")
         return None
 
 
@@ -3136,38 +3401,12 @@ def search_psu(query: str) -> Optional[Dict]:
     
     try:
         # Google site search for Amazon product page
-        google_url = f"https://www.google.com/search?q=site:amazon.com+{requests.utils.quote(query)}+power+supply"
-        
-        print(f"[Lookup] PSU Amazon search: {google_url}")
-        
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(google_url)}"
-        response = scrapedo_get(api_url, timeout=60)
-        
-        # Check for credit exhaustion
-        if response.status_code in [402, 403]:
-            error_text = response.text.lower()
-            if 'credit' in error_text or 'limit' in error_text or 'quota' in error_text:
-                print("[Lookup] Scrape.Do credits exhausted!")
-                return {'error': 'credits_exhausted'}
-        
-        response.raise_for_status()
-        
-        # Parse Google results for Amazon product link
-        soup = BeautifulSoup(response.text, 'lxml')
-        
-        amazon_link = None
-        for link in soup.select('a'):
-            href = link.get('href', '')
-            # Look for Amazon product pages (dp = detail page)
-            if 'amazon.com' in href and '/dp/' in href:
-                match = re.search(r'(https?://(?:www\.)?amazon\.com/[^\s&"]*?/dp/[A-Z0-9]{10})', href)
-                if match:
-                    amazon_link = match.group(1)
-                    break
-        
-        if not amazon_link:
-            print("[Lookup] No Amazon product link found for PSU")
-            return None
+        # v3.8.9: Amazon's own search replaces the Google step, which now
+        # returns a JavaScript-only page with no results.
+        hit = amazon_search(query, 'PSU', 'power supply')
+        if hit is None or hit.get('error'):
+            return hit
+        amazon_link = hit['url']
         
         print(f"[Lookup] Amazon PSU product: {amazon_link}")
         
@@ -3183,6 +3422,8 @@ def search_psu(query: str) -> Optional[Dict]:
                 return {'error': 'credits_exhausted'}
         
         detail_response.raise_for_status()
+        if _blocked_page(detail_response.text, 'product page'):
+            return None
         
         return parse_amazon_psu(detail_response.text, amazon_link)
         
@@ -3190,6 +3431,7 @@ def search_psu(query: str) -> Optional[Dict]:
         return {'error': 'scrapedo_budget_exhausted'}
     except Exception as e:
         print(f"[Lookup] PSU search error: {e}")
+        _note_problem("PSU search error")
         return None
 
 

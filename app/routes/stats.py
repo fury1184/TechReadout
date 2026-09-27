@@ -3,7 +3,7 @@ stats.py — Inventory Breakdown page ("/stats") — v1
 
 Breaks down your owned inventory (not the reference spec catalog) by a few
 sensible fields per component type: CPU by socket, Motherboard by socket and
-chipset, RAM by type and capacity, GPU by manufacturer and VRAM, Storage by
+chipset, RAM by type and stick size, GPU by manufacturer and VRAM, Storage by
 interface and capacity, PSU by wattage, Case by form factor. All grouping is
 by exact value as stored (no numeric bucketing) — v1 scope per design
 discussion.
@@ -14,6 +14,9 @@ counted as 2 sticks). Inventory items without a resolved hardware_spec_id
 (custom/manual entries with no matched spec) have no field values to group
 by and are rolled into an "Unknown / custom entry" row per field so the
 totals still add up to what's actually in inventory.
+
+Owned means not Sold or Dead (v3.8.9). Missing parts still count, matching
+the dashboard's inventory value.
 """
 
 from collections import defaultdict
@@ -36,7 +39,7 @@ UNKNOWN_LABEL = "Unknown / custom entry"
 STATS_CONFIG = {
     "CPU": ["cpu_socket", "manufacturer"],
     "Motherboard": ["mobo_socket", "mobo_chipset"],
-    "RAM": ["ram_type", "ram_size"],
+    "RAM": ["ram_type", "ram_stick_size"],  # computed per stick, see _ram_stick_size
     "GPU": ["manufacturer", "gpu_memory_size"],
     "Storage": ["storage_interface", "storage_capacity"],
     "PSU": ["psu_wattage"],
@@ -95,31 +98,64 @@ def _normalize_value(field_name, value):
     return value
 
 
-def get_breakdown(component_type_name, field_name):
-    """
-    Returns a list of (value, count) tuples for the given component type +
-    HardwareSpec field, sorted by count descending. Count is summed
-    Inventory.quantity, not row count.
+# Statuses that mean a part is no longer owned (v3.8.9).
+EXCLUDED_STATUSES = ('Sold', 'Dead')
 
-    Inventory rows with no hardware_spec_id (custom entries) are grouped
-    under UNKNOWN_LABEL so totals still reflect everything in inventory.
-    Values are normalized via VALUE_ALIASES (if a mapping exists for this
-    field) and merged before sorting.
-    """
-    field = getattr(HardwareSpec, field_name)
 
-    rows = (
-        db.session.query(field, func.coalesce(func.sum(Inventory.quantity), 0))
+def _ram_stick_size(ram_size, ram_modules):
+    """Per-stick GB for a RAM spec.
+
+    RAM specs describe the kit (ram_size = total GB, ram_modules = sticks) but
+    inventory quantity counts physical sticks, so grouping by ram_size listed a
+    2x16GB kit as two sticks under 32. An unknown module count means a single
+    stick, the same fallback compatibility.py uses.
+    """
+    if ram_size is None:
+        return None
+    try:
+        modules = int(ram_modules or 1)
+    except (TypeError, ValueError):
+        modules = 1
+    per_stick = ram_size / max(modules, 1)
+    return int(per_stick) if float(per_stick).is_integer() else round(per_stick, 2)
+
+
+def _owned_quantity_query(component_type_name, *columns):
+    """Summed Inventory.quantity of owned parts of one type, grouped by *columns*."""
+    return (
+        db.session.query(*columns, func.coalesce(func.sum(Inventory.quantity), 0))
         .select_from(Inventory)
         .join(ComponentType, ComponentType.id == Inventory.component_type_id)
         .outerjoin(HardwareSpec, HardwareSpec.id == Inventory.hardware_spec_id)
         .filter(ComponentType.name == component_type_name)
-        .group_by(field)
-        .all()
+        .filter(Inventory.status.notin_(EXCLUDED_STATUSES))
+        .group_by(*columns)
     )
 
+
+def get_breakdown(component_type_name, field_name):
+    """
+    Returns a list of (value, count) tuples for the given component type +
+    HardwareSpec field, sorted by count descending. Count is summed
+    Inventory.quantity of owned parts (not Sold/Dead), not row count.
+
+    Inventory rows with no hardware_spec_id (custom entries) are grouped
+    under UNKNOWN_LABEL so totals still reflect everything in inventory.
+    Values are normalized via VALUE_ALIASES (if a mapping exists for this
+    field) and merged before sorting. 'ram_stick_size' is computed from
+    ram_size / ram_modules rather than read from a column.
+    """
+    if field_name == 'ram_stick_size':
+        rows = _owned_quantity_query(
+            component_type_name, HardwareSpec.ram_size, HardwareSpec.ram_modules
+        ).all()
+        pairs = [(_ram_stick_size(size, modules), qty) for size, modules, qty in rows]
+    else:
+        field = getattr(HardwareSpec, field_name)
+        pairs = [(value, qty) for value, qty in _owned_quantity_query(component_type_name, field).all()]
+
     merged = defaultdict(int)
-    for value, qty in rows:
+    for value, qty in pairs:
         qty = int(qty or 0)
         if qty == 0:
             continue
