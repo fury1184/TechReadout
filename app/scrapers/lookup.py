@@ -4,8 +4,8 @@ TechReadout — Hardware Lookup (web-scraper step)
 The old free scrape chain (FlareSolverr, Playwright TPU, Playwright Amazon,
 manufacturer sites) was retired in v3.0 because Cloudflare and Amazon anti-bot
 measures had made every free path unreliable. First-party/vendor and TechPowerUp
-lookups use Scrape.Do (paid); CPU-Monkey is attempted directly between the vendor
-source and TechPowerUp. Open WebUI (optional self-hosted LLM) remains the last
+lookups use Scrape.Do (paid); CPU-Monkey is attempted directly after the vendor
+source. Open WebUI (optional self-hosted LLM) remains the last
 automatic step before manual AI Import.
 
 This module is only the scraper fallback. The DB / seed-database lookup and the
@@ -13,9 +13,9 @@ lookup cache run first, in the caller (app/routes/api.py); lookup_hardware() is
 invoked only when those miss. The concrete per-component-type order is documented
 on lookup_hardware() below and is, in summary:
 
-    CPU (Intel): Intel ARK via Scrape.Do → CPU-Monkey → TechPowerUp via Scrape.Do → Open WebUI
-    CPU (AMD):   AMD Official via Scrape.Do → CPU-Monkey → TechPowerUp via Scrape.Do → Open WebUI
-    GPU:         TechPowerUp via Scrape.Do → Amazon via Scrape.Do → Open WebUI
+    CPU (Intel): Intel ARK via Scrape.Do → CPU-Monkey → Open WebUI
+    CPU (AMD):   AMD Official via Scrape.Do → CPU-Monkey → Open WebUI
+    GPU:         TechPowerUp (known pages only) via Scrape.Do → Amazon via Scrape.Do → Open WebUI
     Motherboard: Newegg → Amazon (niche/clone brands only: Machinist/Huananzhi/
                  Jingyue) → Open WebUI. (The ASUS official-site step is skipped
                  since v3.8.9: it needed Google to find the page.)
@@ -142,14 +142,6 @@ def lookup_problems() -> list:
     """Problems recorded so far in the current lookup."""
     budget = _get_lookup_budget()
     return list(budget.get('problems', [])) if budget else []
-
-
-def _scrapedo_calls_remaining():
-    """Return remaining paid calls for this lookup, or None outside a budget."""
-    budget = _get_lookup_budget()
-    if not budget:
-        return None
-    return max(0, int(budget.get('call_limit', 0)) - int(budget.get('call_count', 0)))
 
 
 def start_scrapedo_sequence(name: str) -> bool:
@@ -448,34 +440,6 @@ def detect_component_type(query: str) -> str:
     return 'GPU'
 
 
-def get_search_url(query: str, component_type: str) -> str:
-    """Get search URL for the discovery step.
-
-    CPU/GPU use TechPowerUp's own native search endpoint (?q=...) rather than
-    scraping Google. TPU's documented search formatters are:
-        https://www.techpowerup.com/cpu-specs/?q={query}
-        https://www.techpowerup.com/gpu-specs/?q={query}
-    This removes the fragile Google-results dependency that broke when Google
-    changed its result markup. Motherboards still use manufacturer-site Google
-    search (no TPU coverage).
-    """
-    search_query = requests.utils.quote(query)
-    if component_type == 'GPU':
-        # TechPowerUp native GPU specs search
-        return f"https://www.techpowerup.com/gpu-specs/?q={search_query}"
-    elif component_type == 'Motherboard':
-        # Google search for motherboard specs (manufacturer sites)
-        manufacturer = detect_motherboard_manufacturer(query)
-        if manufacturer:
-            site = get_manufacturer_site(manufacturer)
-            return f"https://www.google.com/search?q=site:{site}+{search_query}+specifications"
-        # Generic search if manufacturer unknown
-        return f"https://www.google.com/search?q={search_query}+motherboard+specifications"
-    else:
-        # TechPowerUp native CPU specs search
-        return f"https://www.techpowerup.com/cpu-specs/?q={search_query}"
-
-
 def detect_motherboard_manufacturer(query: str) -> Optional[str]:
     """Detect motherboard manufacturer from query."""
     query_lower = query.lower()
@@ -767,8 +731,8 @@ def _cpu_monkey_slug(query: str) -> Optional[str]:
     elif amd:
         # A bare AMD model like "5800X" does not contain enough information to
         # construct CPU-Monkey's slug (Ryzen 5/7/9 is part of the URL). AMD's
-        # official site search is expected to resolve that form first; TPU is
-        # still available afterward. Explicit family names can be slugged.
+        # official site search is expected to resolve that form first.
+        # Explicit family names can be slugged.
         amd_family = re.search(
             r'\b(ryzen|threadripper|epyc|athlon|phenom|sempron|opteron|fx|a(?:4|6|8|10|12))\b',
             value, re.I,
@@ -812,8 +776,9 @@ def search_cpu_monkey(query: str, allow_scrapedo_fallback: bool = True) -> Optio
 
     # If the direct request is blocked, use one Scrape.Do request when the
     # service is available. This keeps CPU-Monkey useful without making it
-    # dependent on Scrape.Do for the common case.
-    if response is None or response.status_code != 200:
+    # dependent on Scrape.Do for the common case. v3.8.11: not on 404/410 --
+    # CPU-Monkey doesn't list that CPU, and a paid fetch would get the same answer.
+    if response is None or response.status_code not in (200, 404, 410):
         if allow_scrapedo_fallback and scrapedo_fallback_enabled():
             try:
                 api_url = (
@@ -1195,7 +1160,7 @@ def search_intel_ark(query: str) -> Optional[Dict]:
       3. Fetch the product page via Scrape.Do (1 credit).
       4. Parse and return normalized CPU spec dict.
 
-    Returns None on any failure so the caller can fall through to TPU.
+    Returns None on any failure so the caller can fall through to CPU-Monkey.
     Only called for Intel CPUs; AMD uses its own first-party lookup.
     """
     if not SCRAPEDO_TOKEN:
@@ -1522,9 +1487,9 @@ def lookup_hardware(
     and seed lookup before this is called; this is the scraper fallback only.
 
     Chain:
-        CPU (Intel): Seed DB [caller] → Intel ARK via Scrape.Do → CPU-Monkey → TPU via Scrape.Do → Open WebUI
-        CPU (AMD):   Seed DB [caller] → AMD Official via Scrape.Do → CPU-Monkey → TPU via Scrape.Do → Open WebUI
-        GPU:         Seed DB [caller] → TPU via Scrape.Do → Amazon → Open WebUI
+        CPU (Intel): Seed DB [caller] → Intel ARK via Scrape.Do → CPU-Monkey → Open WebUI
+        CPU (AMD):   Seed DB [caller] → AMD Official via Scrape.Do → CPU-Monkey → Open WebUI
+        GPU:         Seed DB [caller] → TPU (known pages only) via Scrape.Do → Amazon → Open WebUI
         Motherboard: Seed DB [caller] → Newegg → Amazon (niche brands) → Open WebUI
         RAM:         Seed DB [caller] → Newegg → Amazon via Scrape.Do → Open WebUI
         Other:       Seed DB [caller] → Amazon via Scrape.Do → Open WebUI
@@ -1576,7 +1541,7 @@ def lookup_hardware(
                 if component_type == 'GPU':
                     if start_scrapedo_sequence('gpu'):
                         print("[Lookup] Step 1: Scrape.Do TPU then Amazon (GPU)", flush=True)
-                        # Try TPU first (~1 credit if we have a confirmed ID, else ~2)
+                        # TPU first: 1 credit for a known page, nothing otherwise
                         result = search_with_scrapedo(query, component_type)
                         if _is_terminal_error(result):
                             return result
@@ -1608,9 +1573,7 @@ def lookup_hardware(
                             print("[Lookup] Intel ARK miss; trying CPU-Monkey", flush=True)
                             # CPU-Monkey has a deterministic model URL (for example
                             # intel_core_i5_9600k). Direct HTTP is free; if the site
-                            # blocks it, use any remaining Scrape.Do call before TPU.
-                            # This is a stronger exact-model fallback than spending
-                            # the final normal-depth call on a broad TPU search.
+                            # blocks it, use any remaining Scrape.Do call.
                             result = search_cpu_monkey(query, allow_scrapedo_fallback=True)
                             if _acceptable_scrape_hit(query, result, 'CPU'):
                                 print("[Lookup] Hit: CPU-Monkey", flush=True)
@@ -1619,7 +1582,7 @@ def lookup_hardware(
                                 return first_party_terminal_error
                             print("[Lookup] CPU-Monkey miss", flush=True)
 
-                        # ── AMD: AMD.com first, then CPU-Monkey, then TPU ──
+                        # ── AMD: AMD.com first, then CPU-Monkey ──
                         elif amd_cpu:
                             print("[Lookup] Step 1a: AMD Official via Scrape.Do (CPU)", flush=True)
                             result = search_amd_official(query)
@@ -1637,20 +1600,8 @@ def lookup_hardware(
                                 return first_party_terminal_error
                             print("[Lookup] CPU-Monkey miss", flush=True)
 
-                        # ARK/AMD + CPU-Monkey can consume the normal-depth paid
-                        # budget. Do not turn that into a terminal budget error by
-                        # blindly starting TPU; continue to Open WebUI instead.
-                        remaining = _scrapedo_calls_remaining()
-                        if remaining is not None and remaining <= 0:
-                            print("[Lookup] Paid CPU budget used; skipping TPU and continuing to Open WebUI", flush=True)
-                        else:
-                            print("[Lookup] Step 1c: Scrape.Do TPU (CPU)", flush=True)
-                            result = search_with_scrapedo(query, component_type)
-                            if _is_terminal_error(result):
-                                return result
-                            if _acceptable_scrape_hit(query, result, component_type):
-                                print("[Lookup] Hit: Scrape.Do TPU", flush=True)
-                                return enrich_scrape_result(query, result, component_type)
+                        # v3.8.11: no TechPowerUp step for CPUs. Its search now
+                        # answers HTTP 410, and there's no list of known CPU pages.
 
                 elif component_type == 'Motherboard':
                     if start_scrapedo_sequence('motherboard'):
@@ -1746,14 +1697,13 @@ def _is_terminal_error(result):
 
 def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
     """
-    Fetch a CPU/GPU spec page from TechPowerUp via Scrape.Do.
+    Fetch a GPU spec page from TechPowerUp via Scrape.Do (1 credit).
 
-    Strategy:
-      1. If we have a verified slug.cXXXX TPU ID, try direct (1 credit).
-         On hit, return immediately.
-      2. Otherwise (or on miss), query TechPowerUp's native ?q= search via
-         Scrape.Do (1 credit), find the spec page link, and fetch it via
-         Scrape.Do (1 credit). Worst case 2 credits.
+    Only cards with a verified slug.cXXXX ID in _TPU_GPU_IDS are fetched.
+    v3.8.11: TechPowerUp retired its ?q= search for scripts (CPU and GPU
+    databases both answer HTTP 410 "search link is no longer supported";
+    programmatic access is now a paid license), so a card without a known
+    page is a clean miss here and the chain moves on to Amazon.
     """
     if not SCRAPEDO_TOKEN:
         return None
@@ -1763,53 +1713,16 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
         search_query = normalize_gpu_query(query)
 
     try:
-        # ── Step A: direct URL when we have a confirmed ID ────────────────
         direct_url = get_direct_tpu_url(search_query, component_type)
         slug = direct_url.split('/gpu-specs/')[-1].split('/cpu-specs/')[-1]
-        has_known_id = '.' in slug
+        if '.' not in slug:
+            print(f"[Lookup] No known TechPowerUp page for '{query}'; skipping TechPowerUp", flush=True)
+            return None
 
-        if has_known_id:
-            print(f"[Lookup] Scrape.Do direct (confirmed ID): {direct_url}", flush=True)
-            # v3.8.11: no render=true. TechPowerUp answers Scrape.Do's headless
-            # browser with a bot check, but serves the plain page (1 credit, not 5).
-            api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(direct_url)}"
-            response = scrapedo_get(api_url, timeout=60)
-
-            if response.status_code in (402, 403):
-                err = response.text.lower()
-                if any(w in err for w in ('credit', 'limit', 'quota', 'payment')):
-                    print("[Lookup] Scrape.Do credits exhausted!", flush=True)
-                    return {'error': 'credits_exhausted'}
-
-            if response.status_code == 200 and (
-                'gpuname' in response.text or 'cpuname' in response.text
-                or 'sectioncontainer' in response.text
-            ):
-                result = parse_techpowerup_detail(response.text, component_type, direct_url)
-                if not result or _acceptable_scrape_hit(query, dict(result), component_type):
-                    return result
-                # v3.8.11: a wrong list entry (e.g. RTX 4060 -> Radeon Pro SSG).
-                # Name it so the list can be fixed, then try TechPowerUp's search.
-                print(f"[Lookup] Known page for '{query}' is {result.get('model')} ({direct_url}); "
-                      f"fix this entry in _TPU_GPU_IDS / _TPU_CPU_IDS", flush=True)
-            else:
-                # v3.8.11: TechPowerUp didn't send a spec page (blocked, missing or
-                # an error page). Its search would fail the same way, so skip it
-                # and leave the call budget to Amazon.
-                if not _blocked_page(response.text, 'spec page'):
-                    print(f"[Lookup] Known page came back without specs (HTTP {response.status_code})", flush=True)
-                    _note_problem('TechPowerUp returned no spec page')
-                print("[Lookup] Skipping TechPowerUp search", flush=True)
-                return None
-
-        # ── Step B: TechPowerUp native ?q= search via Scrape.Do ───────────
-        # v3.8.10: search without the memory size; TechPowerUp's names say
-        # "16 GB" or nothing, so "gtx 1080 8g" matched no link.
-        tpu_terms = strip_gpu_memory(search_query) if component_type == 'GPU' else search_query
-        search_url = get_search_url(tpu_terms or search_query, component_type)
-        print(f"[Lookup] Scrape.Do TPU search: {search_url}", flush=True)
-
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(search_url)}"
+        print(f"[Lookup] Scrape.Do direct (confirmed ID): {direct_url}", flush=True)
+        # v3.8.11: no render=true. TechPowerUp answers Scrape.Do's headless
+        # browser with a bot check, but serves the plain page (1 credit, not 5).
+        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(direct_url)}"
         response = scrapedo_get(api_url, timeout=60)
 
         if response.status_code in (402, 403):
@@ -1818,28 +1731,24 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
                 print("[Lookup] Scrape.Do credits exhausted!", flush=True)
                 return {'error': 'credits_exhausted'}
 
-        response.raise_for_status()
-
-        detail_url = find_tpu_link_in_results(response.text, component_type)
-        if not detail_url:
-            print("[Lookup] No TechPowerUp spec link in search results", flush=True)
+        if response.status_code == 200 and (
+            'gpuname' in response.text or 'cpuname' in response.text
+            or 'sectioncontainer' in response.text
+        ):
+            result = parse_techpowerup_detail(response.text, component_type, direct_url)
+            if not result or _acceptable_scrape_hit(query, dict(result), component_type):
+                return result
+            # v3.8.11: a wrong list entry (e.g. RTX 4060 -> Radeon Pro SSG).
+            # Name it so the list can be fixed.
+            print(f"[Lookup] Known page for '{query}' is {result.get('model')} ({direct_url}); "
+                  f"fix this entry in _TPU_GPU_IDS", flush=True)
             return None
 
-        # ── Step C: fetch the detail page via Scrape.Do ───────────────────
-        print(f"[Lookup] Scrape.Do detail fetch: {detail_url}", flush=True)
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(detail_url)}"
-        detail_response = scrapedo_get(detail_api_url, timeout=60)
-
-        if detail_response.status_code in (402, 403):
-            err = detail_response.text.lower()
-            if any(w in err for w in ('credit', 'limit', 'quota', 'payment')):
-                print("[Lookup] Scrape.Do credits exhausted!", flush=True)
-                return {'error': 'credits_exhausted'}
-
-        detail_response.raise_for_status()
-        if _blocked_page(detail_response.text, 'product page'):
-            return None
-        return parse_techpowerup_detail(detail_response.text, component_type, detail_url)
+        # v3.8.11: TechPowerUp didn't send a spec page (blocked, missing or an error page).
+        if not _blocked_page(response.text, 'spec page'):
+            print(f"[Lookup] Known page came back without specs (HTTP {response.status_code})", flush=True)
+            _note_problem('TechPowerUp returned no spec page')
+        return None
 
     except ScrapeDoBudgetExceeded:
         return {'error': 'scrapedo_budget_exhausted'}
@@ -1848,41 +1757,6 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
         _note_problem("Scrape.Do error")
         return None
 
-
-def find_tpu_link_in_results(html: str, component_type: str) -> Optional[str]:
-    """Extract a TechPowerUp spec-page link from TPU's own ?q= search results.
-
-    Markup-tolerant by design: rather than depending on the result listing's
-    table/row/card structure (which is not pinned down and may change), it scans
-    every anchor and matches the spec-page URL pattern directly.
-
-    Detail-page patterns (verified via Wikidata properties P13844 / P13418):
-        cpu-specs/{slug}.c{N}      (c\\d{1,4})
-        gpu-specs/{slug}.{c|g}{N}  ([cg]\\d{1,4})
-
-    TPU results pages use root-relative hrefs (e.g. "/cpu-specs/...."), so we
-    normalize to an absolute https URL before returning.
-    """
-    soup = BeautifulSoup(html, 'lxml')
-
-    target = 'gpu-specs' if component_type == 'GPU' else 'cpu-specs'
-    # Require a real spec ID suffix (.c#### or .g####) so we don't match the
-    # database listing/landing pages, only individual product pages.
-    pattern = re.compile(rf'/{target}/[a-z0-9\-]+\.[cg]\d{{1,4}}', re.IGNORECASE)
-
-    for link in soup.find_all('a', href=True):
-        href = link['href']
-        if pattern.search(href):
-            # Normalize root-relative or protocol-relative hrefs to absolute.
-            if href.startswith('//'):
-                href = 'https:' + href
-            elif href.startswith('/'):
-                href = 'https://www.techpowerup.com' + href
-            elif not href.startswith('http'):
-                href = 'https://www.techpowerup.com/' + href.lstrip('/')
-            return requests.utils.unquote(href)
-
-    return None
 
 def parse_techpowerup_detail(html: str, component_type: str, url: str) -> Dict:
     """Parse TechPowerUp detail page HTML into specs dict."""

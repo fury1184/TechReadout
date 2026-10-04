@@ -1,74 +1,37 @@
-TechReadOut v3.8.10 -- deploy steps
+TechReadOut v3.8.11 -- deploy steps
 ===================================
-What changed and why: see CHANGELOG.md, v3.8.10.
+What changed and why: see CHANGELOG.md, v3.8.11.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.9. .env is NOT included (public-safe zip). This is the complete
-3.8.10 set: it replaces the earlier 3.8.10 zip (adds the GPU manufacturer/AIB
-fix on top of the TZ/memory-size/wrong-type work already in that zip).
+Built on v3.8.10. .env is NOT included (public-safe zip).
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/__init__.py
-  app/timefmt.py                               (new, earlier 3.8.10)
-  app/maintenance/backfill_gpu_manufacturer.py (new)
-  app/routes/api.py
   app/routes/main.py
-  app/scrapers/gpu_brands.py                   (new)
   app/scrapers/lookup.py
-  app/scrapers/normalization.py
-  app/scrapers/scoring.py
-  app/scrapers/validation.py
-  app/templates/backup/index.html
   app/templates/dashboard.html
-  app/templates/inventory/add.html
-  app/templates/inventory/detail.html
-  app/templates/review/queue.html
+  app/templates/scraper/index.html
   app/version.py
-  requirements.txt
-  tests/test_gpu_brands.py                     (new)
   tests/test_gpu_lookup.py
-  tests/test_local_time.py                     (new, earlier 3.8.10)
-  tests/fixtures/tpu_gtx_1650_super_plain.html.gz   (new, earlier 3.8.10)
-  tests/fixtures/tpu_bot_check_headless.html.gz     (new, earlier 3.8.10)
   CHANGELOG.md
   PATCH_FILES.txt
   CLAUDE.md
 
-Manual change (not in the zip, so your NAS mount edit is kept)
---------------------------------------------------------------
-  docker-compose.yml, under the app service's environment: add
-      - TZ=${TZ:-UTC}
-  and check that .env has TZ set to your zone, e.g. TZ=America/New_York
-  (Unchanged from the earlier 3.8.10 zip -- skip if already done.)
-
 Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
-  2. Make the docker-compose.yml change above (if not already done).
-  3. docker compose build app        (new tzdata package)
-  4. docker compose up -d app        (starts the new image with TZ)
-  5. Run the GPU-manufacturer backfill (fixes any existing specs saved with
-     an AIB brand as manufacturer -- see CHANGELOG):
-       docker exec techreadout-app python -m app.maintenance.backfill_gpu_manufacturer
-     Review the dry-run output, then:
-       docker exec techreadout-app python -m app.maintenance.backfill_gpu_manufacturer --apply
-  No schema change, no migration.
+  2. docker compose restart app
+  No schema change, no migration, no rebuild.
 
 Verify
 ------
-  1. Locally: python -m pytest  -> 235 passed.
-  2. docker exec techreadout-app date   -> shows your local time zone.
-  3. Dashboard: the two RAM sticks added the evening of Sept 28 show 2026-09-28.
-  4. Add Inventory: look up "EVGA GTX 1660" with the Manufacturer field blank
-     -> field fills with "EVGA", not "NVIDIA". Look it up again with
-     Manufacturer already set to something -> it's left alone.
-  5. /stats -> GPU -> By Manufacturer shows only NVIDIA/AMD/Intel rows (no
-     stray AIB-brand entries) once the backfill has run.
-  6. Watch the log:
+  1. Locally: python -m pytest  -> 239 passed.
+  2. Footer/dashboard shows TechReadOut v3.8.11.
+  3. Watch the log:
        docker logs -f --tail 0 techreadout-app 2>&1 | sed -u -E 's/token=[^&[:space:]"]+/token=***/g'
-     GPU lookup "EVGA GTX 1650 Super": accepted from the database, no Scrape.Do
-     call. "msi gtx 1080 aero 8g" (click Retry anyway if a saved "not found"
-     answers): .../geforce-gtx-1080.c2839 at "cost 1 credit(s)", and the GTX
-     1080's specs.
-  7. Type set to CPU + "msi gtx 1080": the page says to set the type to GPU,
-     and the log shows "[Lookup] Stopped" with no Scrape.Do call.
+     CPU lookup "E5-1680 v4": Intel ARK, then CPU-Monkey with no Scrape.Do
+     call after its 404, and no "TPU search" line. The page says not found
+     (or shows an ARK hit) -- never "couldn't finish (Scrape.Do error)".
+     GPU lookup for a card not on the known-pages list (e.g. "rtx 4060"):
+     "No known TechPowerUp page ... skipping TechPowerUp", then Amazon.
+  4. Dashboard: add an item, press Back -> the counts include it without a
+     manual refresh. Switch to another tab and back -> the page reloads.

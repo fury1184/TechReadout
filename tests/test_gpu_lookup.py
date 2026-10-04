@@ -35,7 +35,7 @@ def test_known_pages_are_reached(query, page):
 
 @pytest.mark.parametrize('query', ['rtx 4060 ti 12gb', 'rtx 3060 8gb'])
 def test_unlisted_memory_size_does_not_fall_back_to_another_size(query):
-    assert '.c' not in direct(query).split('/gpu-specs/')[-1]   # no known ID: go to the search
+    assert '.c' not in direct(query).split('/gpu-specs/')[-1]   # no known ID: skip TechPowerUp
 
 
 # ── parse_amazon_gpu: manufacturer must be the chip vendor (v3.8.10) ────────
@@ -70,20 +70,20 @@ def test_no_recognizable_board_partner_omits_the_field():
     assert 'board_manufacturer' not in specs
 
 
-def test_techpowerup_search_leaves_out_the_memory_size(flask_app, monkeypatch):
-    urls = []
-
-    def fake_get(url, timeout):
-        urls.append(url)
-        resp = requests.models.Response()
-        resp.status_code, resp._content, resp.url = 200, b'<html></html>', url
-        return resp
+@pytest.mark.parametrize('query, component_type', [
+    ('rtx 4060 ti 12gb', 'GPU'),       # not on the known-pages list
+    ('Xeon E5-1680 v4', 'CPU'),
+])
+def test_no_known_page_is_a_clean_miss_without_a_paid_call(flask_app, monkeypatch, query, component_type):
+    """v3.8.11: TechPowerUp's ?q= search answers HTTP 410 now, so it isn't called."""
     monkeypatch.setattr(lookup, 'SCRAPEDO_TOKEN', 'x')
-    monkeypatch.setattr(lookup.requests, 'get', fake_get)
-    lookup.search_with_scrapedo('rtx 4060 ti 12gb', 'GPU')
-    unquote = requests.utils.unquote
-    assert len(urls) == 1
-    assert unquote(unquote(urls[0])).endswith('/gpu-specs/?q=rtx 4060 ti')   # no "12gb"
+    monkeypatch.setattr(lookup.requests, 'get', lambda *a, **k: pytest.fail('paid call made'))
+    lookup._begin_lookup_budget()
+    try:
+        assert lookup.search_with_scrapedo(query, component_type) is None
+        assert lookup.lookup_problems() == []
+    finally:
+        lookup._end_lookup_budget()
 
 
 @pytest.mark.parametrize('query, name, ok', [
@@ -193,16 +193,16 @@ def test_known_page_without_specs_skips_the_techpowerup_search(flask_app, monkey
         lookup._end_lookup_budget()
 
 
-def test_wrong_known_page_is_named_and_the_search_still_runs(flask_app, monkeypatch, capsys):
+def test_wrong_known_page_is_named_and_rejected(flask_app, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(lookup, 'SCRAPEDO_TOKEN', 'x')
     monkeypatch.setattr(lookup.requests, 'get', lambda url, timeout: calls.append(url) or _tpu_page(200, '<div class="gpuname">x</div>'))
     monkeypatch.setattr(lookup, 'parse_techpowerup_detail', lambda html, ct, url: {
         'model': 'AMD Radeon Pro SSG', 'gpu_memory_size': 4096, 'source': 'techpowerup'})
-    lookup.search_with_scrapedo('rtx 3060', 'GPU')
+    assert lookup.search_with_scrapedo('rtx 3060', 'GPU') is None
     out = capsys.readouterr().out
     assert "Known page for 'rtx 3060' is AMD Radeon Pro SSG" in out
-    assert len(calls) == 2                              # known page, then the search
+    assert len(calls) == 1                              # no TechPowerUp search after it
 
 
 def _budget_stop(monkeypatch):
@@ -279,3 +279,16 @@ def test_bot_check_on_the_known_page_is_logged_as_a_problem(flask_app, monkeypat
 
 def test_wrong_rtx_4060_entry_is_gone():
     assert '.c' not in direct('rtx 4060').split('/gpu-specs/')[-1]
+
+
+# ── v3.8.11 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('status, paid_calls', [(404, 0), (410, 0), (403, 1)])
+def test_cpu_monkey_pays_for_a_retry_only_when_blocked(flask_app, monkeypatch, status, paid_calls):
+    """A 404 means CPU-Monkey doesn't list the CPU (e.g. Xeon E5-1680 v4)."""
+    calls = []
+    monkeypatch.setattr(lookup, 'SCRAPEDO_TOKEN', 'x')
+    monkeypatch.setattr(lookup, 'scrapedo_fallback_enabled', lambda: True)
+    monkeypatch.setattr(lookup.requests, 'get', lambda url, **k: calls.append(url) or _tpu_page(status, 'nope'))
+    assert lookup.search_cpu_monkey('Xeon E5-1680 v4') is None
+    assert sum('api.scrape.do' in url for url in calls) == paid_calls
