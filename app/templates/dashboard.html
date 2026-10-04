@@ -160,7 +160,7 @@
                             <span class="text-muted">—</span>
                         {% endif %}
                     </td>
-                    <td class="pe-3 text-muted small">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '-' }}</td>
+                    <td class="pe-3 text-muted small">{{ item.created_at|localtime('%Y-%m-%d') }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -202,6 +202,23 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+// The dashboard is server-rendered, so reload it whenever it may be showing old numbers:
+// restored from the back/forward cache, or brought back after the tab was in the background.
+(function () {
+    window.addEventListener('pageshow', function (e) {
+        if (e.persisted) location.reload();
+    });
+    let hiddenAt = null;
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            hiddenAt = Date.now();
+        } else if (hiddenAt && Date.now() - hiddenAt > 2000) {
+            location.reload();
+        }
+    });
+})();
+</script>
 {% if component_counts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
         integrity="sha512-CQBWl4fJHWbryGE+Pc3UJWW1h3dK5JQKkn3ZnBqFOB2E1tK5s3+tAFKGh3bOqHFq7RlRLAz5Cqyz5i8p0v7g=="

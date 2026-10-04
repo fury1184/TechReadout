@@ -27,6 +27,10 @@ def create_app(config=None):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Show stored UTC timestamps in the local time zone ($TZ), v3.8.10.
+    from app.timefmt import localtime_filter
+    app.jinja_env.filters['localtime'] = localtime_filter
+
     @app.context_processor
     def inject_app_version():
         from app.version import APP_NAME, APP_VERSION, APP_DISPLAY_VERSION

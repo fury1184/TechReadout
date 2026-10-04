@@ -2,6 +2,8 @@
 
 import re
 
+from app.scrapers.gpu_brands import gpu_query_strip_terms
+
 def normalize_model_name(name: str) -> str:
     """Normalize a model name for comparison."""
     if not name:
@@ -143,39 +145,19 @@ def extract_key_identifiers(query: str) -> list:
     return identifiers
 
 
-def normalize_gpu_query(query: str) -> str:
+def normalize_gpu_query(query: str, log: bool = True) -> str:
     """
     Normalize GPU query to reference card name for TechPowerUp search.
     Strips AIB partner names and model-specific suffixes.
     E.g., "EVGA GTX 1660 Ti SC Ultra" -> "GTX 1660 Ti"
     """
     query_lower = query.lower()
-    
-    # AIB partner names to strip
-    aib_partners = [
-        'evga', 'asus', 'msi', 'gigabyte', 'zotac', 'pny', 'palit', 'gainward',
-        'xfx', 'sapphire', 'powercolor', 'asrock', 'biostar', 'colorful', 'galax',
-        'inno3d', 'kfa2', 'kuroutoshikou', 'leadtek', 'manli', 'maxsun', 'nvidia',
-        'amd', 'intel', 'founders edition'
-    ]
-    
-    # AIB model-specific suffixes to strip
-    aib_suffixes = [
-        'ftw3', 'ftw', 'xc3', 'xc', 'sc ultra', 'sc gaming', 'sc', 'black gaming',
-        'rog strix', 'strix', 'tuf gaming', 'tuf', 'dual', 'phoenix', 'proart',
-        'gaming x trio', 'gaming x', 'gaming z trio', 'gaming z', 'suprim x', 'suprim',
-        'ventus', 'mech', 'sea hawk', 'aero',
-        'aorus master', 'aorus elite', 'aorus', 'eagle', 'gaming oc', 'windforce',
-        'amp extreme', 'amp holo', 'amp', 'twin edge',
-        'xlr8', 'verto', 'uprising', 'epic-x',
-        'gamerock', 'jetstream', 'phoenix',
-        'nitro+', 'nitro', 'pulse', 'toxic', 'vapor-x',
-        'red devil', 'red dragon', 'hellhound', 'fighter',
-        'challenger', 'phantom gaming', 'taichi',
-        'black edition', 'black', 'white', 'oc edition', 'oc', 'gaming',
-        'ultra', 'edition'
-    ]
-    
+
+    # AIB partner names and AIB model-specific suffixes to strip (v3.8.10:
+    # sourced from gpu_brands.py, the shared list, instead of a local copy
+    # that had drifted from scoring.py's).
+    aib_partners, aib_suffixes = gpu_query_strip_terms()
+
     result = query_lower
     
     # Strip AIB partner names
@@ -193,5 +175,6 @@ def normalize_gpu_query(query: str) -> str:
     if len(result) < 5:
         return query
     
-    print(f"[Lookup] Normalized GPU query: '{query}' -> '{result}'")
+    if log:
+        print(f"[Lookup] Normalized GPU query: '{query}' -> '{result}'")
     return result

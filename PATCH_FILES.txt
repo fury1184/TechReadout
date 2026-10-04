@@ -1,84 +1,74 @@
-TechReadOut v3.8.9 -- deploy steps
-==================================
-What changed and why: see CHANGELOG.md, v3.8.9.
+TechReadOut v3.8.10 -- deploy steps
+===================================
+What changed and why: see CHANGELOG.md, v3.8.10.
 This file only covers the current release and is overwritten each time.
-Built on the 3.8.8 working tree. .env is NOT included (public-safe zip).
-This is the complete 3.8.9 set: it replaces the earlier 3.8.9 zip, whether
-or not that one was deployed.
+Built on v3.8.9. .env is NOT included (public-safe zip). This is the complete
+3.8.10 set: it replaces the earlier 3.8.10 zip (adds the GPU manufacturer/AIB
+fix on top of the TZ/memory-size/wrong-type work already in that zip).
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  migrations/init.sql                  (fresh installs only; existing DBs untouched)
   app/__init__.py
-  app/compatibility.py
+  app/timefmt.py                               (new, earlier 3.8.10)
+  app/maintenance/backfill_gpu_manufacturer.py (new)
   app/routes/api.py
   app/routes/main.py
-  app/routes/planner.py
-  app/routes/stats.py
+  app/scrapers/gpu_brands.py                   (new)
   app/scrapers/lookup.py
+  app/scrapers/normalization.py
+  app/scrapers/scoring.py
   app/scrapers/validation.py
+  app/templates/backup/index.html
+  app/templates/dashboard.html
   app/templates/inventory/add.html
-  app/templates/planner/detail.html
-  app/templates/scraper/index.html
+  app/templates/inventory/detail.html
+  app/templates/review/queue.html
   app/version.py
-  tests/conftest.py                    (new)
-  tests/test_schema_sync.py            (new)
-  tests/test_scrapedo.py               (new)
-  tests/test_inventory_routes.py       (new)
-  tests/test_stats_breakdown.py        (new)
-  tests/test_build_planner.py          (new)
-  tests/test_lookup_sources.py         (new)
-  tests/test_ram_validation.py
-  tests/test_scoring.py                (restored)
-  tests/test_normalization.py          (restored)
-  tests/test_validation.py             (restored)
-  tests/test_duplicates.py             (restored)
-  tests/test_tpu_parser.py             (restored)
-  tests/fixtures/amazon_product_xpg_z1_ddr4_2400.html.gz            (new)
-  tests/fixtures/amazon_search_adata_xpg_ddr4_2400.html.gz          (new)
-  tests/fixtures/google_javascript_page.html.gz                     (new)
-  tests/fixtures/newegg_ram_product_teamgroup_vulcan_z.html.gz      (new)
-  tests/fixtures/newegg_search_teamgroup_vulcan_z.html.gz           (new)
-  tests/fixtures/newegg_search_zero_results.html.gz                 (new)
-  .gitignore
+  requirements.txt
+  tests/test_gpu_brands.py                     (new)
+  tests/test_gpu_lookup.py
+  tests/test_local_time.py                     (new, earlier 3.8.10)
+  tests/fixtures/tpu_gtx_1650_super_plain.html.gz   (new, earlier 3.8.10)
+  tests/fixtures/tpu_bot_check_headless.html.gz     (new, earlier 3.8.10)
   CHANGELOG.md
   PATCH_FILES.txt
   CLAUDE.md
 
-Files to delete
----------------
-  __init__.py      (repo ROOT only, not app/__init__.py -- locally and in
-                    /opt/stacks/techreadout/)
-
-Git, once (local repo)
-----------------------
-  git rm -r --cached app/seeds/__pycache__ app/serializers/__pycache__
-  (stops tracking .pyc files; the files stay on disk)
+Manual change (not in the zip, so your NAS mount edit is kept)
+--------------------------------------------------------------
+  docker-compose.yml, under the app service's environment: add
+      - TZ=${TZ:-UTC}
+  and check that .env has TZ set to your zone, e.g. TZ=America/New_York
+  (Unchanged from the earlier 3.8.10 zip -- skip if already done.)
 
 Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
-  2. docker restart techreadout-app
-  3. Lookup Cache page -> Clear misses (once; most were caused by the Google block)
-  No schema change, no migration, no rebuild.
+  2. Make the docker-compose.yml change above (if not already done).
+  3. docker compose build app        (new tzdata package)
+  4. docker compose up -d app        (starts the new image with TZ)
+  5. Run the GPU-manufacturer backfill (fixes any existing specs saved with
+     an AIB brand as manufacturer -- see CHANGELOG):
+       docker exec techreadout-app python -m app.maintenance.backfill_gpu_manufacturer
+     Review the dry-run output, then:
+       docker exec techreadout-app python -m app.maintenance.backfill_gpu_manufacturer --apply
+  No schema change, no migration.
 
 Verify
 ------
-  1. Locally: python -m pytest  -> 172 passed.
-  2. Watch the log while testing lookups:
+  1. Locally: python -m pytest  -> 235 passed.
+  2. docker exec techreadout-app date   -> shows your local time zone.
+  3. Dashboard: the two RAM sticks added the evening of Sept 28 show 2026-09-28.
+  4. Add Inventory: look up "EVGA GTX 1660" with the Manufacturer field blank
+     -> field fills with "EVGA", not "NVIDIA". Look it up again with
+     Manufacturer already set to something -> it's left alone.
+  5. /stats -> GPU -> By Manufacturer shows only NVIDIA/AMD/Intel rows (no
+     stray AIB-brand entries) once the backfill has run.
+  6. Watch the log:
        docker logs -f --tail 0 techreadout-app 2>&1 | sed -u -E 's/token=[^&[:space:]"]+/token=***/g'
-  3. RAM lookup "ADATA XPG DDR4-2400 CL16": the log shows Newegg search, then
-     Amazon search picking XPG Z1 DDR4 2400 (AX4U240038G16-DRZ), with a
-     "cost 1 credit(s)" line per call. Result: DDR4, 2400, CL16, 16GB, 2 sticks.
-  4. RAM lookup "Team T-FORCE VULCAN Z 32GB DDR4-3200": found on Newegg (2 calls).
-  5. An ASUS motherboard lookup logs "ASUS official site skipped" and goes
-     straight to Newegg.
-  6. Sell 1 of a quantity-2 item: one Sold row + one remaining row, no error.
-  7. Lookup Settings -> Check Balance: "X of Y credits remaining", matching
-     the Scrape.Do dashboard.
-  8. Inventory Breakdown: sold/dead parts gone from the counts; a 2x16GB kit
-     shows 2 under Stick Size 16.
-  9. Open any build plan: the page loads. A plan with socket LGA 2011 no
-     longer lists LGA 2011-3 CPUs or X99 boards; a plan using 2 sticks from
-     an 8-stick row shows 2 sticks' worth of RAM.
- 10. docker logs techreadout-app 2>&1 | grep -c "token="  (see Upgrade note)
+     GPU lookup "EVGA GTX 1650 Super": accepted from the database, no Scrape.Do
+     call. "msi gtx 1080 aero 8g" (click Retry anyway if a saved "not found"
+     answers): .../geforce-gtx-1080.c2839 at "cost 1 credit(s)", and the GTX
+     1080's specs.
+  7. Type set to CPU + "msi gtx 1080": the page says to set the type to GPU,
+     and the log shows "[Lookup] Stopped" with no Scrape.Do call.

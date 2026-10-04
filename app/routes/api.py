@@ -5,6 +5,7 @@ from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting,
 from app.serializers.hardware import hardware_spec_to_dict
 from app.inventory_rules import inventory_quantity
 from app.duplicates import find_duplicates, compact_duplicate_key
+from app.timefmt import to_local
 from app.name_normalization import (
     normalize_manufacturer, normalize_model_display, choose_existing_canonical_name
 )
@@ -137,9 +138,10 @@ def lookup_hardware():
     import os, re
     from app.scrapers.lookup import (
         lookup_hardware as do_lookup, score_candidate,
-        detect_component_type, resolve_motherboard_manufacturer,
+        detect_component_type, resolve_motherboard_manufacturer, obvious_type_conflict,
     )
     from app.scrapers.validation import cpu_models_compatible, ram_candidate_decision
+    from app.scrapers.gpu_brands import extract_board_partner
 
     REVIEW_THRESHOLD = 90
     OPENWEBUI_CONFIDENCE_CAP = 89  # Open WebUI (LLM) results never auto-accept, however well they score
@@ -151,6 +153,19 @@ def lookup_hardware():
 
     if not query:
         return jsonify({'error': 'Query required'}), 400
+    force_refresh = bool(data.get('force_refresh'))
+
+    # v3.8.10: a GPU looked up as a CPU (or the reverse) searched the wrong
+    # database and cost 5 credits for nothing. Stop before any paid call.
+    conflict = obvious_type_conflict(query, component_type)
+    if conflict:
+        print(f"[Lookup] Stopped: '{query}' looks like a {conflict} but the type is {component_type}", flush=True)
+        return jsonify({
+            'found': False,
+            'type_mismatch': conflict,
+            'message': f"This looks like a {conflict}, but the type is set to {component_type}. "
+                       f"Set the type to {conflict} (or Auto) and look it up again.",
+        })
 
     # ── Motherboard manufacturer nudge ──────────────────────────────────────
     # Only meaningful for motherboard lookups, and only when we couldn't
@@ -164,6 +179,24 @@ def lookup_hardware():
         effective_component_type == 'Motherboard'
         and not resolve_motherboard_manufacturer(query, manufacturer_hint)
     )
+
+    # ── GPU board (AIB) manufacturer suggestion (v3.8.10) ───────────────────
+    # A matched/saved HardwareSpec.manufacturer is always the chip maker
+    # (NVIDIA/AMD/Intel) — that's the shared reference spec. "EVGA GTX 1660"
+    # should still suggest EVGA as the manufacturer to record for *this* unit
+    # (Inventory.custom_manufacturer), not NVIDIA. Query-based detection is
+    # the fallback for every return path; the scraper path additionally
+    # prefers the brand actually read off the scraped product title.
+    gpu_query_board_manufacturer = (
+        extract_board_partner(query) if effective_component_type == 'GPU' else None
+    )
+
+    def _with_board_manufacturer(d, scraped_result=None):
+        if effective_component_type == 'GPU' and d is not None:
+            board = (scraped_result or {}).get('board_manufacturer') or gpu_query_board_manufacturer
+            if board:
+                d['board_manufacturer'] = board
+        return d
 
     # ── Component-type filter ──────────────────────────────────────────────
     ct_filter = None
@@ -333,16 +366,20 @@ def lookup_hardware():
         LookupCache.store_hit(cache_key, query, component_type, best['spec_id'])
         db.session.commit()
         print(f"[DB Search] Auto-accept: {best['manufacturer']} {best['model']} conf={best_db_conf}", flush=True)
-        return jsonify(best)
+        return jsonify(_with_board_manufacturer(best))
 
     # Check cache for a previously recorded miss (only skip scraper if no DB candidates either)
     cached = LookupCache.get_fresh(cache_key, max_age_days=MISS_CACHE_DAYS)
     if cached and cached.status == 'miss' and not sorted_db:
-        print(f"[Lookup] Skipped: cached miss from {cached.updated_at:%Y-%m-%d}", flush=True)
-        return jsonify({
-            'found': False, 'message': 'No specs found for that model. Try manual entry.',
-            'manufacturer_unknown': mobo_manufacturer_unknown,
-        })
+        if force_refresh:
+            print(f"[Lookup] Retry anyway: ignoring cached miss from {to_local(cached.updated_at):%Y-%m-%d}", flush=True)
+        else:
+            print(f"[Lookup] Skipped: cached miss from {to_local(cached.updated_at):%Y-%m-%d}", flush=True)
+            return jsonify({
+                'found': False, 'message': 'No specs found for that model. Try manual entry.',
+                'cached_miss': True, 'cached_on': f"{to_local(cached.updated_at):%Y-%m-%d}",
+                'manufacturer_unknown': mobo_manufacturer_unknown,
+            })
 
     # ── Web scraper ────────────────────────────────────────────────────────
     print(f"[Lookup] Falling through to web scraper for '{query}'", flush=True)
@@ -355,6 +392,7 @@ def lookup_hardware():
     )
 
     scraper_candidate = None
+    stop_note = None   # set when a budget or credit stop ends the web lookup early
 
     if result and not result.get('error'):
         # Save to DB immediately (same as before — it's a reference spec regardless)
@@ -378,6 +416,7 @@ def lookup_hardware():
             # as a useful triage signal in the review queue.
             conf = min(conf, OPENWEBUI_CONFIDENCE_CAP)
         scraper_candidate = _spec_to_dict(saved_spec, source=source, confidence=conf)
+        scraper_candidate = _with_board_manufacturer(scraper_candidate, result)
         print(f"[Lookup] Scraper result: {saved_spec.display_name} conf={conf}", flush=True)
 
         # Auto-accept if scraper result clears threshold
@@ -388,6 +427,12 @@ def lookup_hardware():
 
     elif result:
         err = result.get('error')
+        # v3.8.11: a budget or credit stop no longer throws away the database
+        # matches; they're shown for review with a note on why it stopped.
+        if err == 'scrapedo_budget_exhausted' or 'Scrape.Do call limit reached' in (result.get('problems') or []):
+            stop_note = _budget_stop_message()
+        elif err == 'credits_exhausted':
+            stop_note = 'Scrape.Do credits are used up, so the paid lookup stopped.'
         if err == 'unsupported_type':
             return jsonify({
                 'found': False,
@@ -395,10 +440,9 @@ def lookup_hardware():
                            f"Add {result.get('component_type', 'this item')} as a custom entry.",
                 'unsupported_type': True,
             })
-        if err == 'scrapedo_budget_exhausted':
-            return jsonify({'found': False, 'message': 'Paid lookup budget reached for this request.',
-                            'scrapedo_budget_exhausted': True})
-        if err == 'credits_exhausted':
+        if err == 'scrapedo_budget_exhausted' and not sorted_db:
+            return jsonify({'found': False, 'message': stop_note, 'scrapedo_budget_exhausted': True})
+        if err == 'credits_exhausted' and not sorted_db:
             return jsonify({'found': False, 'message': 'Scrape.Do API credits exhausted.',
                             'credits_exhausted': True})
 
@@ -408,6 +452,10 @@ def lookup_hardware():
         all_candidates.append(scraper_candidate)
     all_candidates.sort(key=lambda x: x['confidence'], reverse=True)
     all_candidates = all_candidates[:3]
+    # DB-only candidates haven't been through _with_board_manufacturer yet
+    # (scraper_candidate already has); query-based fallback only, since
+    # there's no scraped title behind a pure DB match.
+    all_candidates = [_with_board_manufacturer(c) for c in all_candidates]
 
     if not all_candidates:
         if result is not None:
@@ -415,6 +463,8 @@ def lookup_hardware():
             # remember that as "not found" -- a retry may well work.
             problems = result.get('problems') or [result.get('error') or 'unknown error']
             print(f"[Lookup] Not saving a miss: {'; '.join(problems)}", flush=True)
+            if stop_note:
+                return jsonify({'found': False, 'message': stop_note, 'scrapedo_budget_exhausted': True})
             return jsonify({
                 'found': False,
                 'message': f"The lookup couldn't finish ({'; '.join(problems)}). "
@@ -447,7 +497,22 @@ def lookup_hardware():
         'query': query,
         'component_type': component_type,
         'manufacturer_unknown': mobo_manufacturer_unknown,
+        'note': stop_note,
     })
+
+
+def _budget_stop_message() -> str:
+    """What the Add page says when a lookup hits its paid-call limit (v3.8.11)."""
+    from app.scrapers.lookup import _load_scrapedo_budget_settings
+    budget = _load_scrapedo_budget_settings()
+    depth, calls = budget['depth'], budget['call_limit']
+    message = f"Stopped after {calls} paid calls ({depth.capitalize()}) before finishing."
+    if depth == 'conservative':
+        message += (" To allow more, set Paid lookup depth to Normal or Thorough in Lookup Settings "
+                    "and look it up again.")
+    elif depth != 'thorough':
+        message += " To allow more, set Paid lookup depth to Thorough in Lookup Settings and look it up again."
+    return message
 
 
 @bp.route('/confirm-lookup', methods=['POST'])

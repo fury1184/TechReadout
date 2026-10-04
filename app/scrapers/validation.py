@@ -8,7 +8,7 @@ Rules:
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from app.scrapers.normalization import (
     extract_key_identifiers,
@@ -350,6 +350,45 @@ def ram_candidate_decision(query, candidate, query_manufacturer=None,
     return "ok"
 
 
+# A GPU memory size as people type it: "8g", "8gb", "8 GB", "16GB" (v3.8.10).
+# \b on both sides keeps "GDDR6" and "18 Gbps" out.
+_GPU_MEMORY_RE = re.compile(r'\b(\d{1,2})\s*gb?\b', re.IGNORECASE)
+
+
+def gpu_memory_gb(text) -> Optional[int]:
+    """Memory size in GB stated in a GPU name or query, else None."""
+    match = _GPU_MEMORY_RE.search(text or '')
+    return int(match.group(1)) if match else None
+
+
+def strip_gpu_memory(text: str) -> str:
+    """The text without its memory size ("gtx 1080 8g" -> "gtx 1080")."""
+    return ' '.join(_GPU_MEMORY_RE.sub(' ', text or '').split())
+
+
+def gpu_memory_conflict(query: str, result: dict) -> bool:
+    """True when the query states a memory size and the result has a different one.
+
+    Checks the result's name ("... RTX 4060 Ti 8 GB") and its parsed
+    gpu_memory_size (MB, or GB for small values -- same rule as compatibility.py).
+    Nothing else tells an RTX 4060 Ti 8 GB from a 16 GB, so without this a 16GB
+    card could be saved with the 8 GB page's specs.
+    """
+    wanted = gpu_memory_gb(query)
+    if not wanted or not result:
+        return False
+    stated = gpu_memory_gb(result.get('model') or '')
+    if stated and stated != wanted:
+        return True
+    try:
+        size = float(result.get('gpu_memory_size') or 0)
+    except (TypeError, ValueError):
+        return False
+    if size <= 0:
+        return False
+    return round(size / 1024 if size > 128 else size) != wanted
+
+
 def validate_result(query: str, result_model: str, component_type: str = None,
                     log: bool = True) -> bool:
     """
@@ -364,7 +403,10 @@ def validate_result(query: str, result_model: str, component_type: str = None,
     
     # For GPUs, use normalized query for validation since TechPowerUp has reference names
     if component_type == 'GPU':
-        query = normalize_gpu_query(query)
+        if gpu_memory_conflict(query, {'model': result_model}):
+            say(f"[Lookup] Validation failed: GPU memory size differs ('{query}' vs '{result_model}')")
+            return False
+        query = normalize_gpu_query(query, log=log)
 
     if component_type == 'CPU' and not cpu_models_compatible(query, result_model):
         say(f"[Lookup] Validation failed: strict CPU identity mismatch '{query}' vs '{result_model}'")
@@ -447,6 +489,10 @@ def validate_result(query: str, result_model: str, component_type: str = None,
 def acceptable_scrape_hit(query: str, result: dict, component_type: str) -> bool:
     """Validate a scraped candidate before ending the fallback chain."""
     result = coerce_unknowns_to_none(result)
+    if component_type == 'GPU' and gpu_memory_conflict(query, result):
+        print(f"[Lookup] Validation failed: '{query}' asks for a different memory size than "
+              f"'{result.get('model')}' ({result.get('gpu_memory_size')} MB)", flush=True)
+        return False
     return (
         bool(result)
         and bool(result.get('model'))

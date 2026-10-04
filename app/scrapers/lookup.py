@@ -62,10 +62,13 @@ from app.scrapers.normalization import (
     normalize_gpu_query,
 )
 from app.scrapers.scoring import enrich_scrape_result, score_candidate
+from app.scrapers.gpu_brands import detect_gpu_chip_vendor, extract_board_partner
 from app.scrapers.validation import (
     acceptable_scrape_hit as _acceptable_scrape_hit,
     extract_ram_ecc,
     extract_ram_speed,
+    gpu_memory_gb,
+    strip_gpu_memory,
     coerce_unknowns_to_none,
     has_minimum_specs,
     missing_required_fields,
@@ -223,6 +226,7 @@ _BLOCK_MARKERS = (
     ('Amazon', ('/errors/validateCaptcha', 'Enter the characters you see below',
                 'api-services-support@amazon.com')),
     ('Google', ('/httpservice/retry/enablejs', 'Please click here if you are not redirected')),
+    ('TechPowerUp', ('Automated bot check in progress',)),
 )
 
 
@@ -276,6 +280,9 @@ def pick_listing(query: str, component_type: str, listings: list, source: str) -
         ranked.append((score, cas_ok, len(query_words & _word_set(title)), listing))
     print(f"[Lookup] {source}: {len(listings)} listings, {len(ranked)} passed validation", flush=True)
     if not ranked:
+        sample = '; '.join(f"'{entry.get('title', '')[:70]}'" for entry in listings[:3])
+        if sample:
+            print(f"[Lookup] {source}: first titles checked: {sample}", flush=True)
         return None
     ranked.sort(key=lambda entry: entry[:3], reverse=True)
     score, _, _, best = ranked[0]
@@ -364,6 +371,25 @@ def scrapedo_fallback_enabled() -> bool:
 # =============================================================================
 # Component-Type Detection & URL Helpers
 # =============================================================================
+
+_GPU_NAME_RE = re.compile(r'\b(gtx|rtx|geforce|radeon|quadro)\b|\brx\s?\d{3,4}\b|\barc\s?[ab]\d{3}\b', re.IGNORECASE)
+_CPU_NAME_RE = re.compile(r'\bi[3579]-?\d{3,5}|\bryzen\b|\bxeon\b|\bthreadripper\b|\bepyc\b', re.IGNORECASE)
+
+
+def obvious_type_conflict(query: str, component_type: str) -> Optional[str]:
+    """'GPU' or 'CPU' when the query unmistakably names the other kind (v3.8.10).
+
+    Only CPU<->GPU, and only when one kind matches and the other doesn't: an
+    APU like "Ryzen 7 5700G with Radeon Graphics" matches both, so it passes.
+    """
+    looks_gpu = bool(_GPU_NAME_RE.search(query or ''))
+    looks_cpu = bool(_CPU_NAME_RE.search(query or ''))
+    if component_type == 'CPU' and looks_gpu and not looks_cpu:
+        return 'GPU'
+    if component_type == 'GPU' and looks_cpu and not looks_gpu:
+        return 'CPU'
+    return None
+
 
 def detect_component_type(query: str) -> str:
     """Detect if query is for GPU, CPU, Motherboard, or PSU based on keywords."""
@@ -529,7 +555,16 @@ def resolve_motherboard_manufacturer(query: str, manufacturer_hint: Optional[str
     return detect_motherboard_manufacturer(query)
 
 def get_direct_tpu_url(query: str, component_type: str) -> str:
-    """Try direct TechPowerUp URL based on common naming patterns."""
+    """Try direct TechPowerUp URL based on common naming patterns.
+
+    v3.8.10: a GPU memory size in the query ("8g", "8gb", "16 GB") is taken
+    out before the slug is built -- it used to stay in, so "gtx 1080 8g" never
+    matched the GTX 1080's known page -- and is then used to pick the memory
+    version below. The URL has a .cXXXX ID only when the list has one.
+    """
+    memory = gpu_memory_gb(query) if component_type == 'GPU' else None
+    if memory:
+        query = strip_gpu_memory(query)
     # Convert query to URL slug format
     slug = query.lower().replace(' ', '-').replace('_', '-')
     # Remove "intel" or "amd" prefix - TPU doesn't use them in slugs
@@ -548,14 +583,16 @@ def get_direct_tpu_url(query: str, component_type: str) -> str:
         elif re.match(r'(rx|r[579])-', slug):
             slug = f"radeon-{slug}"
 
-        # For cards that have VRAM variants (e.g. RTX 5060 Ti 16GB vs 8GB),
-        # try the VRAM-suffixed slug first, then fall back to the bare slug.
-        vram_match = re.search(r'(\d+)\s*gb', query.lower())
-        if vram_match:
-            vram_slug = slug + f"-{vram_match.group(1)}-gb"
+        # Cards with memory versions (RTX 4060 Ti 8 GB / 16 GB): use the version
+        # the query names. If the list has other sizes of this card but not this
+        # one, don't fall back to the plain entry -- it's another size.
+        if memory:
+            vram_slug = f"{slug}-{memory}-gb"
             tpu_id = _get_tpu_gpu_id(vram_slug)
             if tpu_id:
                 return f"https://www.techpowerup.com/gpu-specs/{vram_slug}.{tpu_id}"
+            if _has_memory_versions(slug):
+                return f"https://www.techpowerup.com/gpu-specs/{vram_slug}"
 
         # Check if we have a known TPU spec ID for this GPU
         tpu_id = _get_tpu_gpu_id(slug)
@@ -578,8 +615,11 @@ _TPU_GPU_IDS = {
     'geforce-rtx-4070-ti': 'c3950',
     'geforce-rtx-4070-super': 'c4171',
     'geforce-rtx-4070': 'c3924',
-    'geforce-rtx-4060-ti': 'c3977',
-    'geforce-rtx-4060': 'c3978',
+    'geforce-rtx-4060-ti': 'c3890',        # Default to 8 GB when unspecified (v3.8.10; was c3977, neither version)
+    'geforce-rtx-4060-ti-8-gb': 'c3890',
+    'geforce-rtx-4060-ti-16-gb': 'c4155',
+    # 'geforce-rtx-4060': removed in v3.8.11 -- c3978 is the AMD Radeon Pro SSG.
+    # Add the right ID once confirmed; until then the 4060 goes to the search.
     # RTX 30 series
     'geforce-rtx-3090-ti': 'c3829',
     'geforce-rtx-3090': 'c3622',
@@ -650,6 +690,12 @@ _TPU_GPU_IDS = {
 def _get_tpu_gpu_id(slug: str) -> Optional[str]:
     """Look up the TPU spec ID for a GPU slug."""
     return _TPU_GPU_IDS.get(slug)
+
+
+def _has_memory_versions(slug: str) -> bool:
+    """True when the list has memory-size entries for this card (slug-NN-gb)."""
+    pattern = re.compile(re.escape(slug) + r'-\d+-gb')
+    return any(pattern.fullmatch(key) for key in _TPU_GPU_IDS)
 
 
 # =============================================================================
@@ -1724,7 +1770,9 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
 
         if has_known_id:
             print(f"[Lookup] Scrape.Do direct (confirmed ID): {direct_url}", flush=True)
-            api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(direct_url)}"
+            # v3.8.11: no render=true. TechPowerUp answers Scrape.Do's headless
+            # browser with a bot check, but serves the plain page (1 credit, not 5).
+            api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(direct_url)}"
             response = scrapedo_get(api_url, timeout=60)
 
             if response.status_code in (402, 403):
@@ -1737,15 +1785,31 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
                 'gpuname' in response.text or 'cpuname' in response.text
                 or 'sectioncontainer' in response.text
             ):
-                return parse_techpowerup_detail(response.text, component_type, direct_url)
-
-            print("[Lookup] Direct URL miss; falling through to TPU search", flush=True)
+                result = parse_techpowerup_detail(response.text, component_type, direct_url)
+                if not result or _acceptable_scrape_hit(query, dict(result), component_type):
+                    return result
+                # v3.8.11: a wrong list entry (e.g. RTX 4060 -> Radeon Pro SSG).
+                # Name it so the list can be fixed, then try TechPowerUp's search.
+                print(f"[Lookup] Known page for '{query}' is {result.get('model')} ({direct_url}); "
+                      f"fix this entry in _TPU_GPU_IDS / _TPU_CPU_IDS", flush=True)
+            else:
+                # v3.8.11: TechPowerUp didn't send a spec page (blocked, missing or
+                # an error page). Its search would fail the same way, so skip it
+                # and leave the call budget to Amazon.
+                if not _blocked_page(response.text, 'spec page'):
+                    print(f"[Lookup] Known page came back without specs (HTTP {response.status_code})", flush=True)
+                    _note_problem('TechPowerUp returned no spec page')
+                print("[Lookup] Skipping TechPowerUp search", flush=True)
+                return None
 
         # ── Step B: TechPowerUp native ?q= search via Scrape.Do ───────────
-        search_url = get_search_url(search_query, component_type)
+        # v3.8.10: search without the memory size; TechPowerUp's names say
+        # "16 GB" or nothing, so "gtx 1080 8g" matched no link.
+        tpu_terms = strip_gpu_memory(search_query) if component_type == 'GPU' else search_query
+        search_url = get_search_url(tpu_terms or search_query, component_type)
         print(f"[Lookup] Scrape.Do TPU search: {search_url}", flush=True)
 
-        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(search_url)}"
+        api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(search_url)}"
         response = scrapedo_get(api_url, timeout=60)
 
         if response.status_code in (402, 403):
@@ -1763,7 +1827,7 @@ def search_with_scrapedo(query: str, component_type: str) -> Optional[Dict]:
 
         # ── Step C: fetch the detail page via Scrape.Do ───────────────────
         print(f"[Lookup] Scrape.Do detail fetch: {detail_url}", flush=True)
-        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&render=true&url={requests.utils.quote(detail_url)}"
+        detail_api_url = f"https://api.scrape.do?token={SCRAPEDO_TOKEN}&url={requests.utils.quote(detail_url)}"
         detail_response = scrapedo_get(detail_api_url, timeout=60)
 
         if detail_response.status_code in (402, 403):
@@ -1831,10 +1895,15 @@ def parse_techpowerup_detail(html: str, component_type: str, url: str) -> Dict:
         'raw_data': {}
     }
     
-    # Get model name from page title
-    title = soup.select_one('h1.gpuname, h1.cpuname, .content h1')
-    if title:
-        full_name = title.text.strip()
+    # Get model name from page title. v3.8.11: TechPowerUp's heading is now
+    # h1.gpudb-name (the old h1.gpuname is gone, so every page parsed with no
+    # name and failed the final check); the <title> ("X Specs | TechPowerUp
+    # ...") is the fallback.
+    title = soup.select_one('h1.gpudb-name, h1.cpudb-name, h1.gpuname, h1.cpuname, .content h1')
+    full_name = ' '.join(title.get_text(' ', strip=True).split()) if title else ''
+    if not full_name and soup.title:
+        full_name = soup.title.get_text(strip=True).split(' Specs |')[0].strip()
+    if full_name:
         specs['model'] = full_name
         
         # Extract manufacturer
@@ -2029,13 +2098,20 @@ def parse_amazon_gpu(html: str, url: str) -> Optional[Dict]:
         full_title = title.text.strip()
         specs['model'] = clean_gpu_model_name(full_title)
         specs['raw_data']['full_title'] = full_title  # Keep original for reference
-        
-        # Detect manufacturer from title
-        title_lower = full_title.lower()
-        for mfr in ['evga', 'asus', 'msi', 'gigabyte', 'zotac', 'pny', 'sapphire', 'xfx', 'powercolor', 'asrock']:
-            if mfr in title_lower:
-                specs['manufacturer'] = mfr.upper()
-                break
+
+        # v3.8.10: manufacturer must be the chip maker (NVIDIA/AMD/Intel),
+        # same as every other GPU source — this field feeds the shared
+        # HardwareSpec catalog, and a board brand there (e.g. "MSI") shows
+        # up as a stray peer entry next to NVIDIA/AMD in /stats. The AIB
+        # board brand from the title (this IS the right place to capture
+        # it) goes in board_manufacturer instead, for the caller to offer
+        # as the per-unit Inventory manufacturer.
+        chip_vendor = detect_gpu_chip_vendor(full_title)
+        if chip_vendor:
+            specs['manufacturer'] = chip_vendor
+        board_partner = extract_board_partner(full_title)
+        if board_partner:
+            specs['board_manufacturer'] = board_partner
     
     raw = specs['raw_data']
     page_text = soup.get_text().lower()

@@ -1,12 +1,13 @@
 import csv
 import io
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, jsonify, make_response
 from app import db
 import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
 from app.inventory_rules import inventory_quantity, enforce_assignment_status
 from app.compatibility import check_inventory_items
+from app.timefmt import local_today
 from app.name_normalization import (
     NameProposal, normalize_manufacturer, normalize_model_display
 )
@@ -54,8 +55,12 @@ def dashboard():
     # Recent additions
     recent_items = Inventory.query.order_by(Inventory.created_at.desc()).limit(5).all()
 
-    return render_template('dashboard.html', stats=stats, component_counts=component_counts,
-                           recent_items=recent_items)
+    response = make_response(render_template('dashboard.html', stats=stats,
+                                             component_counts=component_counts,
+                                             recent_items=recent_items))
+    # Live counts: never let the browser reuse a cached copy (Back button, reopened tab).
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @bp.route('/inventory')
@@ -824,7 +829,7 @@ def inventory_sell(id):
             return redirect(url_for('main.inventory_sell', id=id))
         
         sale_date_str = request.form.get('sale_date')
-        sale_date = datetime.strptime(sale_date_str, '%Y-%m-%d').date() if sale_date_str else datetime.utcnow().date()
+        sale_date = datetime.strptime(sale_date_str, '%Y-%m-%d').date() if sale_date_str else local_today()
         sale_price = request.form.get('sale_price') or None
         sold_to = request.form.get('sold_to', '').strip() or None
         

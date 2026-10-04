@@ -12,22 +12,15 @@ from typing import Optional, Dict
 from app.scrapers.validation import (
     cpu_models_compatible, has_minimum_specs, present_spec_fields,
 )
+from app.scrapers.gpu_brands import (
+    GPU_AIB_SUFFIXES, GPU_BOARD_PARTNERS, _GPU_CHIP_WORDS, strip_aib_suffix,
+)
 
-AIB_SUFFIXES = frozenset({
-    'xc', 'xc gaming', 'xc black', 'xc ultra', 'sc', 'sc ultra', 'sc gaming',
-    'ftw3', 'ftw3 ultra', 'ftw', 'ftw ultra', 'ftw2', 'ftw3 gaming',
-    'strix', 'tuf gaming', 'tuf', 'rog strix', 'rog',
-    'gaming x', 'gaming x trio', 'gaming trio', 'gaming oc', 'gaming z',
-    'ventus', 'ventus 2x', 'ventus 3x', 'suprim', 'suprim x', 'suprim liquid',
-    'mech', 'mech oc', 'eagle', 'eagle oc',
-    'vision', 'vision oc', 'aero', 'aero oc', 'aorus', 'aorus master', 'aorus elite',
-    'armor', 'armor oc', 'duke', 'duke oc',
-    'nitro+', 'nitro', 'pulse', 'pulse oc',
-    'red devil', 'red dragon', 'fighter', 'fighter oc',
-    'hellhound', 'speedster', 'challenger', 'phantom',
-    'black edition', 'overclocked',
-    'trio', 'trio oc', 'trio gaming x',
-})
+# AIB_SUFFIXES kept as an alias (v3.8.10: moved to gpu_brands.py as the
+# single shared list, merged with the one that used to live separately in
+# normalization.py). Nothing outside this module should need it, but the
+# name stays importable in case anything still refers to it directly.
+AIB_SUFFIXES = GPU_AIB_SUFFIXES
 
 _SCORE_MANUFACTURERS = frozenset({
     'asus', 'msi', 'gigabyte', 'asrock', 'evga', 'nvidia', 'amd', 'intel',
@@ -37,8 +30,6 @@ _SCORE_MANUFACTURERS = frozenset({
     'biostar', 'colorful',
 })
 
-_GPU_BRAND_PREFIXES = frozenset({'nvidia', 'geforce', 'amd', 'radeon', 'intel', 'arc'})
-
 _VRAM_RE = re.compile(r'(\d+)\s*gb', re.I)
 
 def extract_vram_gb(text: str) -> Optional[int]:
@@ -47,21 +38,21 @@ def extract_vram_gb(text: str) -> Optional[int]:
     return int(m.group(1)) if m else None
 
 
-def strip_aib_suffix(model: str) -> str:
-    """
-    Remove AIB variant words and GPU branding prefixes from a model string,
-    leaving only the core model tokens for comparison (e.g. 'rtx 3060').
-    """
-    result = (model or '').lower()
-    for prefix in _GPU_BRAND_PREFIXES:
-        result = re.sub(r'\b' + prefix + r'\b', '', result)
-    # Remove VRAM and clock specs — handled separately
-    result = re.sub(r'\d+\s*gb', '', result, flags=re.I)
-    result = re.sub(r'\d+\s*mhz', '', result, flags=re.I)
-    # Remove AIB suffixes longest-first to avoid partial matches
-    for suffix in sorted(AIB_SUFFIXES, key=len, reverse=True):
-        result = re.sub(r'\b' + re.escape(suffix) + r'\b', '', result)
-    return re.sub(r'\s+', ' ', result).strip()
+# GPU board makers and the chip makers whose cards they build. A saved
+# reference spec's manufacturer is the chip maker (NVIDIA / AMD / Intel),
+# while people type the board maker, so "EVGA" should count as a match for
+# "NVIDIA GeForce GTX 1650 Super". v3.8.10: sourced from gpu_brands.py
+# (GPU_BOARD_PARTNERS), the shared list, instead of a local copy.
+_GPU_BOARD_PARTNERS = GPU_BOARD_PARTNERS
+
+
+def _board_partner_of(board_maker: str, cand_mfg_lower: str, cand_lower: str) -> bool:
+    """True when the candidate is a chip maker's spec that this board maker builds."""
+    for chip in _GPU_BOARD_PARTNERS.get(board_maker, ()):
+        for word in _GPU_CHIP_WORDS[chip]:
+            if re.search(r'\b' + word + r'\b', cand_mfg_lower) or re.search(r'\b' + word + r'\b', cand_lower):
+                return True
+    return False
 
 
 def score_candidate(query: str, candidate_name: str, candidate_manufacturer: str,
@@ -96,6 +87,8 @@ def score_candidate(query: str, candidate_name: str, candidate_manufacturer: str
     if query_mfg:
         if query_mfg in cand_mfg_lower or query_mfg in cand_lower:
             score += 25
+        elif component_type == 'GPU' and _board_partner_of(query_mfg, cand_mfg_lower, cand_lower):
+            score += 25   # v3.8.11: "EVGA GTX 1650 Super" vs NVIDIA's reference spec
         # Mismatch → 0 pts (not blocked; human review can still see it)
     else:
         score += 25  # No mfr in query → neutral → full pts

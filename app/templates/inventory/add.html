@@ -849,7 +849,7 @@ modelInput.addEventListener('input', function() {
 manufacturerInput.addEventListener('input', scheduleDuplicateCheck);
 
 // ── Main lookup function ──────────────────────────────────────────────────
-async function doLookup(silent = false) {
+async function doLookup(silent = false, forceRefresh = false) {
     const query = modelInput.value.trim();
     if (!query) { if (!silent) showStatus('Please enter a model name', 'warning'); return; }
 
@@ -872,7 +872,8 @@ async function doLookup(silent = false) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                query, component_type: ctName, manufacturer: manufacturerInput.value.trim()
+                query, component_type: ctName, manufacturer: manufacturerInput.value.trim(),
+                force_refresh: forceRefresh
             })
         });
         const data = await response.json();
@@ -884,8 +885,18 @@ async function doLookup(silent = false) {
             const mfgTip = data.manufacturer_unknown
                 ? ' Tip: entering a manufacturer above (e.g. ASUS, MSI, Gigabyte) may improve results.'
                 : '';
-            showStatus(`⚠️ Low-confidence matches found — please review below.${mfgTip}`, 'warning');
-            showReviewModal(data.candidates, query, ctName);
+            if (data.note) {
+                showStatus(`⚠️ ${data.note} Matches from your database are shown for review.`, 'warning');
+            } else {
+                showStatus(`⚠️ Low-confidence matches found — please review below.${mfgTip}`, 'warning');
+            }
+            showReviewModal(data.candidates, query, ctName, data.note);
+            return;
+        }
+
+        // ── Wrong type selected (v3.8.10): nothing was looked up ──────────
+        if (data.type_mismatch) {
+            if (!silent) showStatus('⚠️ ' + data.message, 'warning');
             return;
         }
 
@@ -905,10 +916,17 @@ async function doLookup(silent = false) {
                     : '';
                 if (data.no_token) {
                     showStatus('⚠️ Spec lookup not configured. Enter specs manually.', 'warning');
+                } else if (data.scrapedo_budget_exhausted) {
+                    showStatus('⚠️ ' + data.message, 'warning');
                 } else if (data.credits_exhausted) {
                     showStatus('🔴 Scrape.Do credits exhausted. Enter specs manually.', 'danger');
                 } else if (data.unsupported_type) {
                     showStatus('ℹ️ ' + data.message, 'info');
+                } else if (data.lookup_incomplete) {
+                    showStatus('⚠️ ' + data.message, 'warning');
+                } else if (data.cached_miss) {
+                    showStatus(`⚠️ No specs found when this was looked up on ${data.cached_on}. Enter specs manually below, or retry.${mfgTip}`, 'warning');
+                    showRetryButton();
                 } else {
                     showStatus(`⚠️ No specs found. Enter specs manually below or save as-is.${mfgTip}`, 'warning');
                 }
@@ -932,7 +950,13 @@ async function doLookup(silent = false) {
 // ── Apply a found result to the form ─────────────────────────────────────
 function applyLookupResult(data, silent = false) {
     hardwareSpecId.value = data.spec_id;
-    if (data.manufacturer) manufacturerInput.value = data.manufacturer;
+    // v3.8.10: don't overwrite a manufacturer you already typed, and prefer
+    // the AIB board brand (e.g. "EVGA") over the matched spec's chip maker
+    // (e.g. "NVIDIA") when one was found in the query or scraped listing —
+    // that's what actually belongs on this inventory item.
+    if (!manufacturerInput.value.trim() && (data.board_manufacturer || data.manufacturer)) {
+        manufacturerInput.value = data.board_manufacturer || data.manufacturer;
+    }
     if (data.model) modelInput.value = data.model;
 
     const previousType = _getCtName();
@@ -1039,9 +1063,22 @@ function buildSpecsPreview(data) {
 
 // ── Status helper ─────────────────────────────────────────────────────────
 function showStatus(message, type) {
+    document.getElementById('retryLookupBtn')?.remove();
     lookupStatus.style.display = 'block';
     lookupMessage.className = `alert alert-${type} mb-0`;
     lookupMessage.querySelector('span').textContent = message;
+}
+
+// "Retry anyway" (v3.8.10): reruns a lookup that was answered from a saved
+// "not found", skipping that saved result.
+function showRetryButton() {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'retryLookupBtn';
+    btn.className = 'btn btn-sm btn-outline-secondary ms-2';
+    btn.textContent = 'Retry anyway';
+    btn.addEventListener('click', () => doLookup(false, true));
+    lookupMessage.appendChild(btn);
 }
 
 // ── Review Modal ──────────────────────────────────────────────────────────
@@ -1061,7 +1098,7 @@ function _getSourceBadge(source) {
     return map[source] || `<span class="badge bg-secondary ms-1">${escapeHtml(source)}</span>`;
 }
 
-function showReviewModal(candidates, query, ctName) {
+function showReviewModal(candidates, query, ctName, note = null) {
     _reviewCandidates = candidates;
     _reviewQuery = query;
     _reviewCtName = ctName;
@@ -1096,7 +1133,8 @@ function showReviewModal(candidates, query, ctName) {
     const confirmBtn = document.getElementById('confirmReviewBtn');
     confirmBtn.disabled = true;
 
-    let html = `<p class="text-muted small mb-3">No high-confidence match found for <strong>${escapeHtml(query)}</strong>.
+    let html = note ? `<div class="alert alert-warning small py-2">${escapeHtml(note)}</div>` : '';
+    html += `<p class="text-muted small mb-3">No high-confidence match found for <strong>${escapeHtml(query)}</strong>.
         Select the best candidate below, or use AI Import to generate specs from scratch.</p>
         <div class="d-flex flex-column gap-2">`;
 

@@ -122,7 +122,7 @@
         <div class="card-footer bg-transparent">
             <small class="text-success">
                 <i class="bi bi-check-circle"></i> Accepted
-                {{ review.resolved_at.strftime('%Y-%m-%d') if review.resolved_at else '' }}
+                {{ review.resolved_at|localtime('%Y-%m-%d', '') }}
                 {% if review.resolved_spec %}
                 &mdash; {{ review.resolved_spec.display_name }}
                 {% endif %}
@@ -132,7 +132,7 @@
         <div class="card-footer bg-transparent">
             <small class="text-muted">
                 <i class="bi bi-dash-circle"></i> Skipped
-                {{ review.resolved_at.strftime('%Y-%m-%d') if review.resolved_at else '' }}
+                {{ review.resolved_at|localtime('%Y-%m-%d', '') }}
             </small>
         </div>
         {% endif %}

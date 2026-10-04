@@ -162,7 +162,7 @@
                     {% endif %}
                     <tr>
                         <th>Added</th>
-                        <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '-' }}</td>
+                        <td>{{ item.created_at|localtime }}</td>
                     </tr>
                 </table>
             </div>
@@ -212,7 +212,7 @@
                             </div>
                             {% endif %}
                             {% if spec.scraped_at %}
-                            <div><strong>Scraped:</strong> {{ spec.scraped_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                            <div><strong>Scraped:</strong> {{ spec.scraped_at|localtime }}</div>
                             {% endif %}
                             {% if spec.source_url %}
                             <div><strong>URL:</strong>
