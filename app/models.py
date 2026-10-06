@@ -169,6 +169,20 @@ def _normalize_hardware_spec_sockets(mapper, connection, target):
             model=target.model, chipset=target.mobo_chipset)
 
 
+@event.listens_for(HardwareSpec, 'before_insert')
+@event.listens_for(HardwareSpec, 'before_update')
+def _normalize_hardware_spec_storage_interface(mapper, connection, target):
+    """Canonicalize storage_interface on every save, regardless of source
+    (scraper result, seed import, manual add/edit form, Open WebUI/AI
+    Import free text, backup import). Same choke-point pattern as the
+    socket normalization above. See
+    app.name_normalization.normalize_storage_interface for the rules.
+    """
+    from app.name_normalization import normalize_storage_interface
+    if target.storage_interface:
+        target.storage_interface = normalize_storage_interface(target.storage_interface)
+
+
 class AppSetting(db.Model):
     __tablename__ = 'app_settings'
 

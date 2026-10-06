@@ -79,6 +79,17 @@ VALUE_ALIASES = {
         "Intel X79": "X79",
         "Intel Z370": "Z370",
     },
+    "storage_interface": {
+        "SATA III 6Gb/s": "SATA III",
+        "SATA III 6 Gb/s": "SATA III",
+        "SATA 6.0 Gbps": "SATA III",
+        "SATA 6 Gbps": "SATA III",
+        "SATA 3.0 Gbps": "SATA II",
+        "SATA 3 Gbps": "SATA II",
+        "M.2 NVMe PCIe 5.0 x4": "PCIe 5.0 x4",
+        "M.2 NVMe PCIe 4.0 x4": "PCIe 4.0 x4",
+        "M.2 NVMe PCIe 3.0 x4": "PCIe 3.0 x4",
+    },
 }
 
 

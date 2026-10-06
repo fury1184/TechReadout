@@ -144,6 +144,66 @@ def canonical_spec_socket(
         hit = bool(model and _COFFEE_LAKE_CPU_RE.search(model))
     return LGA1151_300_SERIES if hit else value
 
+
+# SATA generation is a real spec distinction, not a formatting variant: I is
+# 1.5 Gb/s, II is 3.0 Gb/s, III is 6.0 Gb/s. Sources write the generation as
+# a roman numeral ("SATA III"), a speed figure ("SATA 6.0 Gbps", "SATA
+# 3Gb/s"), both together ("SATA III 6Gb/s"), or with varying Gb/s spelling.
+# Canonicalized to "SATA I/II/III" -- but only when a generation or a speed
+# we recognize is present. A bare "SATA" (no generation given) is left
+# unchanged rather than guessed, same conservative fallback as sockets.
+_SATA_GEN_BY_SPEED = {1.5: "I", 3.0: "II", 6.0: "III"}
+_SATA_WITH_SPEED_RE = re.compile(
+    r"(?i)^sata\s*(?:i{1,3}\s*)?\(?\s*(\d+(?:\.\d+)?)\s*gb(?:/s|ps)\)?$"
+)
+_SATA_ROMAN_ONLY_RE = re.compile(r"(?i)^sata\s*(i{1,3})$")
+
+# NVMe/M.2 interfaces: the scraper's own canonical form is "PCIe X.0 xN" with
+# no "M.2"/"NVMe" prefix -- that's redundant with the storage_type field
+# (NVMe SSD/SATA SSD/HDD), which already distinguishes the drive type.
+_PCIE_RE = re.compile(r"(?i)\bpcie\s*(\d(?:\.\d)?)\s*x\s*(\d+)\b")
+
+
+def normalize_storage_interface(interface: Optional[str]) -> Optional[str]:
+    """Canonicalize a storage spec's interface for consistent storage.
+
+    SATA variants ("SATA III 6Gb/s", "SATA 6.0 Gbps", "SATA 3.0 Gbps", ...)
+    collapse to "SATA I"/"SATA II"/"SATA III" by recognized generation/speed
+    -- SATA II (3.0 Gb/s) is a genuinely different, slower spec than SATA
+    III (6.0 Gb/s) and is never merged into it. NVMe/M.2 PCIe variants
+    ("M.2 NVMe PCIe 4.0 x4") collapse to "PCIe X.0 xN". Anything that
+    doesn't match a known pattern is returned with whitespace only
+    collapsed, otherwise unchanged.
+    """
+    text = _clean_space(interface)
+    if not text:
+        return None
+
+    match = _SATA_WITH_SPEED_RE.match(text)
+    if match:
+        speed = float(match.group(1))
+        gen = _SATA_GEN_BY_SPEED.get(speed)
+        if gen:
+            return f"SATA {gen}"
+        return text
+
+    match = _SATA_ROMAN_ONLY_RE.match(text)
+    if match:
+        roman = match.group(1).upper()
+        if roman in ("I", "II", "III"):
+            return f"SATA {roman}"
+        return text
+
+    match = _PCIE_RE.search(text)
+    if match:
+        gen, lanes = match.groups()
+        if "." not in gen:
+            gen = f"{gen}.0"
+        return f"PCIe {gen} x{lanes}"
+
+    return text
+
+
 def _vendor_tokens(manufacturer: Optional[str]) -> list[str]:
     text = normalize_manufacturer(manufacturer) or ""
     return [

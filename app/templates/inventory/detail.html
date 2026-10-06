@@ -21,6 +21,12 @@
         </form>
         {% endif %}
         {% endif %}
+        <form action="{{ url_for('main.inventory_delete', id=item.id) }}" method="post" class="d-inline"
+              onsubmit="return confirm('Delete this item? This cannot be undone.')">
+            <button type="submit" class="btn btn-outline-danger">
+                <i class="bi bi-trash"></i> Delete
+            </button>
+        </form>
         <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> Back
         </a>
