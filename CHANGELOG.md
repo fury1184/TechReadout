@@ -4,6 +4,11 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
+## v3.8.12
+- **New:** Delete Host. There was no way to remove a host once created. `POST /hosts/<id>/delete` deletes it; blocked (with a flash message) while it still has components assigned, so you decide what happens to those first — unassign them, mark them sold, or Part Out the whole host. The delete button appears on the Hosts list and the host detail page, disabled on the detail page while components are assigned.
+- Tests: `tests/test_host_routes.py` (new) — delete succeeds on an empty host, is blocked on a host with an assigned component. 241 tests.
+- **Upgrade:** none required: no schema change, no migration, no rebuild.
+
 ## v3.8.11
 - **Fixed:** CPU lookups that got past Intel ARK / AMD.com and CPU-Monkey ended in "The lookup couldn't finish (Scrape.Do error)". TechPowerUp retired its `?q=` search for both the CPU and GPU databases (HTTP 410, "search link is no longer supported"; programmatic access is now a paid license), and the 410 went through `raise_for_status()` into the catch-all that reports "Scrape.Do error". The TechPowerUp search is gone: CPUs no longer use TechPowerUp, and GPUs fetch only cards on the known-pages list (`_TPU_GPU_IDS`), which still load. A card without a known page is a clean miss and the chain moves on to Amazon (GPU) or Open WebUI (CPU). Removed `get_search_url()` and `find_tpu_link_in_results()`.
 - **Fixed:** CPU-Monkey paid Scrape.Do to refetch a page that had just answered 404 (CPU-Monkey doesn't list that CPU, e.g. Xeon E5-1680 v4). The paid retry now runs only when the direct fetch was blocked, not on 404/410.

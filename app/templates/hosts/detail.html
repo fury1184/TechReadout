@@ -79,6 +79,13 @@
                 <a href="{{ url_for('main.hosts_compare') }}?a={{ host.id }}" class="btn btn-outline-secondary">
                     <i class="bi bi-layout-split"></i> Compare
                 </a>
+                <form action="{{ url_for('main.hosts_delete', id=host.id) }}" method="post" class="d-inline ms-auto">
+                    <button type="submit" class="btn btn-outline-danger"
+                            {% if components %}disabled title="Unassign, sell, or part out all components first"{% endif %}
+                            onclick="return confirm('Delete host {{ host.hostname }}? This cannot be undone.')">
+                        <i class="bi bi-trash"></i> Delete Host
+                    </button>
+                </form>
             </div>
         </div>
     

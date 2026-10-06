@@ -1,20 +1,18 @@
-TechReadOut v3.8.11 -- deploy steps
+TechReadOut v3.8.12 -- deploy steps
 ===================================
-What changed and why: see CHANGELOG.md, v3.8.11.
+What changed and why: see CHANGELOG.md, v3.8.12.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.10. .env is NOT included (public-safe zip).
+Built on v3.8.11. .env is NOT included (public-safe zip).
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
   app/routes/main.py
-  app/scrapers/lookup.py
-  app/templates/dashboard.html
-  app/templates/scraper/index.html
+  app/templates/hosts/list.html
+  app/templates/hosts/detail.html
   app/version.py
-  tests/test_gpu_lookup.py
+  tests/test_host_routes.py
   CHANGELOG.md
   PATCH_FILES.txt
-  CLAUDE.md
 
 Deploy
 ------
@@ -24,14 +22,11 @@ Deploy
 
 Verify
 ------
-  1. Locally: python -m pytest  -> 239 passed.
-  2. Footer/dashboard shows TechReadOut v3.8.11.
-  3. Watch the log:
-       docker logs -f --tail 0 techreadout-app 2>&1 | sed -u -E 's/token=[^&[:space:]"]+/token=***/g'
-     CPU lookup "E5-1680 v4": Intel ARK, then CPU-Monkey with no Scrape.Do
-     call after its 404, and no "TPU search" line. The page says not found
-     (or shows an ARK hit) -- never "couldn't finish (Scrape.Do error)".
-     GPU lookup for a card not on the known-pages list (e.g. "rtx 4060"):
-     "No known TechPowerUp page ... skipping TechPowerUp", then Amazon.
-  4. Dashboard: add an item, press Back -> the counts include it without a
-     manual refresh. Switch to another tab and back -> the page reloads.
+  1. Locally: python -m pytest  -> 241 passed.
+  2. Footer/dashboard shows TechReadOut v3.8.12.
+  3. Hosts list: a host with no components assigned shows an enabled
+     trash-icon Delete button; confirming it removes the card and the
+     host no longer appears.
+  4. Host detail page for a host WITH assigned components: the Delete
+     Host button is disabled (tooltip explains why). Part Out the host
+     (or unassign/sell its components), then Delete Host works.

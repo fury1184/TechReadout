@@ -1362,6 +1362,22 @@ def hosts_detail(id):
                            compatibility=compatibility)
 
 
+@bp.route('/hosts/<int:id>/delete', methods=['POST'])
+def hosts_delete(id):
+    """Delete a host. Blocked while components are still assigned -
+    the user decides what happens to those first (unassign, mark sold, part out)."""
+    host = Host.query.get_or_404(id)
+
+    if host.components.count() > 0:
+        flash('This host still has components assigned. Unassign, sell, or part them out first.', 'warning')
+        return redirect(url_for('main.hosts_detail', id=id))
+
+    db.session.delete(host)
+    db.session.commit()
+    flash('Host deleted.', 'info')
+    return redirect(url_for('main.hosts_list'))
+
+
 @bp.route('/hosts/<int:id>/edit', methods=['GET', 'POST'])
 def hosts_edit(id):
     """Edit host details."""
