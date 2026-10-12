@@ -28,14 +28,13 @@ Verify
   1. Locally: python -m pytest  -> 274 passed.
   2. Footer/dashboard shows TechReadOut v3.8.15.
   3. Lookup Settings page has a new "Stream Mode" card with a toggle.
-     Turning it on and saving shows a red "Stream Mode — dollar values
-     hidden" banner at the top of every page.
-  4. With Stream Mode on: the dashboard's Inventory Value card shows
+  4. Turning it on and saving shows no banner at the top of any page.
+  5. With Stream Mode on: the dashboard's Inventory Value card shows
      "•••••". The per-item purchase-price column on the dashboard and on
      /inventory, and everything on host/planner pages, still show real
      numbers -- only the dashboard total is masked.
-  5. Turn Stream Mode off and confirm the Inventory Value card shows the
+  6. Turn Stream Mode off and confirm the Inventory Value card shows the
      real number again.
-  6. Other settings cards (paid fallback, eBay, Open WebUI) still save
+  7. Other settings cards (paid fallback, eBay, Open WebUI) still save
      correctly with Stream Mode on or off (each card re-submits the
      others' fields as hidden inputs).

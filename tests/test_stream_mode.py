@@ -76,10 +76,7 @@ def test_settings_page_round_trips_stream_mode_toggle(client):
     assert AppSetting.get_bool('stream_mode') is False
 
 
-def test_stream_mode_banner_shown_only_when_on(client):
-    page_off = client.get('/').get_data(as_text=True)
-    assert 'Stream Mode' not in page_off
-
+def test_stream_mode_shows_no_banner(client):
     _set_stream_mode(True)
     page_on = client.get('/').get_data(as_text=True)
-    assert 'Stream Mode' in page_on
+    assert 'Stream Mode' not in page_on
