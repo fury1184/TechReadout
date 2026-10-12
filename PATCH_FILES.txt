@@ -1,19 +1,14 @@
-TechReadOut v3.8.13 -- deploy steps
+TechReadOut v3.8.14 -- deploy steps
 ===================================
-What changed and why: see CHANGELOG.md, v3.8.13.
+What changed and why: see CHANGELOG.md, v3.8.14.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.12. .env is NOT included (public-safe zip).
+Built on v3.8.13. .env is NOT included (public-safe zip).
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/name_normalization.py
-  app/models.py
-  app/routes/stats.py
-  app/maintenance/backfill_storage_interfaces.py
   app/templates/inventory/edit.html
   app/templates/inventory/detail.html
   app/version.py
-  tests/test_storage_interface_normalization.py
   CHANGELOG.md
   PATCH_FILES.txt
 
@@ -21,26 +16,16 @@ Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
   2. docker compose restart app
-  3. docker exec techreadout-app python -m app.maintenance.backfill_storage_interfaces
-     (dry run -- review the list, then re-run with --apply to commit)
-  No schema change, no migration, no rebuild.
+  No schema change, no migration, no rebuild (template-only change, no
+  Python route logic changed -- uses the existing /inventory/<id>/delete
+  route from the list page).
 
 Verify
 ------
-  1. Locally: python -m pytest  -> 267 passed.
-  2. Footer/dashboard shows TechReadOut v3.8.13.
-  3. Run the backfill script (see Deploy step 3) and confirm the printed
-     changes look right, in particular that any "SATA 3.0 Gbps" row maps
-     to "SATA II", never "SATA III".
-  4. /stats Storage "By Interface": the old split rows (SATA III / SATA III
-     6Gb/s / SATA 6.0 Gbps, and M.2 NVMe PCIe 4.0 x4 / PCIe 4.0 x4) are now
-     merged into single rows with combined quantities.
-  5. Add Inventory with a custom/manual storage entry whose interface you
-     type as "SATA 6.0 Gbps" -- after saving, open the spec and confirm it
-     was stored as "SATA III".
-  6. Open any inventory item's detail page: a "Delete" button appears next
+  1. Footer/dashboard shows TechReadOut v3.8.14.
+  2. Open any inventory item's detail page: a "Delete" button appears next
      to Edit/Split/Back; confirming it removes the item and returns to
      /inventory.
-  7. Open any inventory item's Edit page: a "Delete Item" button appears
+  3. Open any inventory item's Edit page: a "Delete Item" button appears
      below Save Changes; confirming it removes the item and returns to
      /inventory.

@@ -4,8 +4,11 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
-## v3.8.13
+## v3.8.14
 - **New:** Delete Item on the Edit Inventory Item page and the inventory detail page — previously the only way to delete an inventory row was the trash icon on the `/inventory` list, so editing or viewing an item's detail gave no way to remove it without navigating back. Same confirm-then-delete pattern as the list page, using the existing `/inventory/<id>/delete` route (no route changes).
+- **Upgrade:** none required: no schema change, no migration, no rebuild.
+
+## v3.8.13
 - **Fixed:** `/stats` Storage "By Interface" split the same drive interface across multiple rows (`SATA III`, `SATA III 6Gb/s`, `SATA 6.0 Gbps`, `M.2 NVMe PCIe 4.0 x4` vs `PCIe 4.0 x4`) instead of one. New `normalize_storage_interface()` (`app/name_normalization.py`), wired into the same `HardwareSpec` before_insert/before_update save hook that already canonicalizes sockets, so every source (scraper, seed import, manual add/edit form, Open WebUI/AI Import free text, backup restore) gets a consistent `storage_interface` going forward. SATA phrasing collapses to `SATA I`/`SATA II`/`SATA III` by recognized generation or Gb/s speed; M.2/NVMe PCIe phrasing collapses to the scraper's own `PCIe X.0 xN` form. `SATA 3.0 Gbps` normalizes to `SATA II`, **not** `SATA III` — it's a genuinely slower, different spec (3.0 Gb/s vs 6.0 Gb/s) and the two are never merged. An unrecognized bare `SATA` (no generation/speed given) is left unchanged rather than guessed. `/stats`' `VALUE_ALIASES` stopgap also gets a `storage_interface` entry so existing un-backfilled rows display correctly immediately, same belt-and-suspenders pattern as the socket aliases.
 - **New:** `app/maintenance/backfill_storage_interfaces.py` — same dry-run-by-default / `--apply` pattern as `backfill_sockets.py`, for correcting existing `HardwareSpec.storage_interface` values written before this hook existed.
 - Tests: `tests/test_storage_interface_normalization.py` (new) — SATA generation collapsing (including that SATA II/III never merge), M.2/NVMe PCIe prefix cleanup, unrecognized/bare values left alone, and the save hook on both insert and update. 267 tests.
