@@ -1,0 +1,225 @@
+"""Scraper confidence scoring helpers for TechReadOut.
+
+This module keeps candidate scoring separate from the lookup orchestration.
+Unknown values should stay ``None``/``null`` and are scored as incomplete rather
+than guessed.
+"""
+
+import re
+from datetime import datetime, timezone
+from typing import Optional, Dict
+
+from app.scrapers.validation import (
+    cpu_models_compatible, has_minimum_specs, present_spec_fields,
+)
+from app.scrapers.gpu_brands import (
+    GPU_AIB_SUFFIXES, GPU_BOARD_PARTNERS, _GPU_CHIP_WORDS, strip_aib_suffix,
+)
+
+# AIB_SUFFIXES kept as an alias (v3.8.10: moved to gpu_brands.py as the
+# single shared list, merged with the one that used to live separately in
+# normalization.py). Nothing outside this module should need it, but the
+# name stays importable in case anything still refers to it directly.
+AIB_SUFFIXES = GPU_AIB_SUFFIXES
+
+_SCORE_MANUFACTURERS = frozenset({
+    'asus', 'msi', 'gigabyte', 'asrock', 'evga', 'nvidia', 'amd', 'intel',
+    'corsair', 'samsung', 'zotac', 'pny', 'sapphire', 'xfx', 'powercolor',
+    'palit', 'gainward', 'inno3d', 'galax', 'kingston', 'crucial',
+    'g.skill', 'gskill', 'seasonic', 'noctua', 'cooler master', 'be quiet',
+    'biostar', 'colorful',
+})
+
+_VRAM_RE = re.compile(r'(\d+)\s*gb', re.I)
+
+def extract_vram_gb(text: str) -> Optional[int]:
+    """Extract a GB value from text (VRAM, RAM capacity, etc.)."""
+    m = _VRAM_RE.search(text or '')
+    return int(m.group(1)) if m else None
+
+
+# GPU board makers and the chip makers whose cards they build. A saved
+# reference spec's manufacturer is the chip maker (NVIDIA / AMD / Intel),
+# while people type the board maker, so "EVGA" should count as a match for
+# "NVIDIA GeForce GTX 1650 Super". v3.8.10: sourced from gpu_brands.py
+# (GPU_BOARD_PARTNERS), the shared list, instead of a local copy.
+_GPU_BOARD_PARTNERS = GPU_BOARD_PARTNERS
+
+
+def _board_partner_of(board_maker: str, cand_mfg_lower: str, cand_lower: str) -> bool:
+    """True when the candidate is a chip maker's spec that this board maker builds."""
+    for chip in _GPU_BOARD_PARTNERS.get(board_maker, ()):
+        for word in _GPU_CHIP_WORDS[chip]:
+            if re.search(r'\b' + word + r'\b', cand_mfg_lower) or re.search(r'\b' + word + r'\b', cand_lower):
+                return True
+    return False
+
+
+def score_candidate(query: str, candidate_name: str, candidate_manufacturer: str,
+                    component_type: str = 'GPU') -> int:
+    """
+    Score a scrape or DB candidate against the original search query.
+    Returns an integer 0–100 representing match confidence.
+
+    Weights (sum = 100):
+      Manufacturer : 25 pts  — neutral (full pts) when mfr not in query
+      Core model   : 40 pts  — token overlap after stripping AIB suffixes
+      VRAM / RAM   : 20 pts  — neutral when not specified in query;
+                               partial (8 pts) when candidate omits it
+      AIB variant  : 15 pts  — neutral when not specified in query
+    """
+    query_lower = (query or '').lower()
+    cand_lower = (candidate_name or '').lower()
+
+    # A different CPU model is not a lower-confidence match; it is not a match.
+    if component_type == 'CPU' and not cpu_models_compatible(query, candidate_name):
+        return 0
+    cand_mfg_lower = (candidate_manufacturer or '').lower()
+    score = 0
+
+    # ── Manufacturer (25 pts) ──────────────────────────────────────────────
+    query_mfg = None
+    for mfg in _SCORE_MANUFACTURERS:
+        if re.search(r'\b' + re.escape(mfg) + r'\b', query_lower):
+            query_mfg = mfg
+            break
+
+    if query_mfg:
+        if query_mfg in cand_mfg_lower or query_mfg in cand_lower:
+            score += 25
+        elif component_type == 'GPU' and _board_partner_of(query_mfg, cand_mfg_lower, cand_lower):
+            score += 25   # v3.8.11: "EVGA GTX 1650 Super" vs NVIDIA's reference spec
+        # Mismatch → 0 pts (not blocked; human review can still see it)
+    else:
+        score += 25  # No mfr in query → neutral → full pts
+
+    # ── VRAM / Memory (20 pts) ────────────────────────────────────────────
+    use_mem = component_type in ('GPU', 'RAM')
+    query_vram = extract_vram_gb(query) if use_mem else None
+
+    if query_vram:
+        cand_vram = extract_vram_gb(candidate_name)
+        if cand_vram == query_vram:
+            score += 20
+        elif cand_vram is None:
+            score += 8   # Candidate title doesn't list VRAM → partial credit
+        # Wrong VRAM → 0 pts
+    else:
+        score += 20  # No VRAM in query → neutral → full pts
+
+    # ── Core model (40 pts) ───────────────────────────────────────────────
+    q_core = strip_aib_suffix(query)
+    c_core = strip_aib_suffix(candidate_name)
+    q_tokens = {t for t in re.split(r'[\s\-]+', q_core) if len(t) >= 2}
+    c_tokens = {t for t in re.split(r'[\s\-]+', c_core) if len(t) >= 2}
+
+    if q_tokens:
+        overlap = len(q_tokens & c_tokens) / len(q_tokens)
+        score += int(40 * overlap)
+
+    # ── AIB variant (15 pts) ──────────────────────────────────────────────
+    q_variants = {s for s in AIB_SUFFIXES
+                  if re.search(r'\b' + re.escape(s) + r'\b', query_lower)}
+    if q_variants:
+        c_variants = {s for s in AIB_SUFFIXES
+                      if re.search(r'\b' + re.escape(s) + r'\b', cand_lower)}
+        score += 15 if (q_variants & c_variants) else 0
+    else:
+        score += 15  # No variant in query → neutral → full pts
+
+    return min(score, 100)
+
+
+SOURCE_TRUST = {
+    'intel_ark': 98,
+    'cpu_monkey': 91,
+    'amd_official': 96,
+    'manufacturer': 95,
+    'techpowerup': 93,
+    'newegg': 85,
+    'amazon': 74,
+    'scraped': 70,
+    'openwebui': 65,
+}
+
+
+def source_display_name(source: str) -> str:
+    names = {
+        'intel_ark': 'Intel ARK',
+        'cpu_monkey': 'CPU-Monkey',
+        'amd_official': 'AMD Official',
+        'manufacturer': 'Manufacturer',
+        'techpowerup': 'TechPowerUp',
+        'newegg': 'Newegg',
+        'amazon': 'Amazon',
+        'openwebui': 'Open WebUI',
+    }
+    return names.get(source or '', source or 'Unknown')
+
+
+def spec_completeness_score(result: dict, component_type: str) -> int:
+    """Return a 0-100 score for how complete the scraped spec payload is."""
+    required_counts = {
+        'CPU': 6,
+        'GPU': 5,
+        'RAM': 5,
+        'Storage': 4,
+        'Motherboard': 8,
+        'PSU': 4,
+        'Cooler': 4,
+        'Case': 3,
+        'Fan': 3,
+    }
+    present = len(present_spec_fields(result, component_type))
+    target = required_counts.get(component_type, 2)
+    if target <= 0:
+        return 100
+    return min(100, int((present / target) * 100))
+
+
+def enrich_scrape_result(query: str, result: dict, component_type: str) -> Optional[Dict]:
+    """Attach source, matching, and completeness metadata to a scrape result."""
+    if not result:
+        return None
+
+    result = dict(result)
+    result.setdefault('component_type', component_type)
+    source = result.get('source') or 'scraped'
+    source_trust = SOURCE_TRUST.get(source, SOURCE_TRUST['scraped'])
+    match_score = score_candidate(
+        query,
+        result.get('model') or '',
+        result.get('manufacturer') or '',
+        component_type,
+    )
+    completeness = spec_completeness_score(result, component_type)
+
+    confidence = int(round((match_score * 0.55) + (source_trust * 0.30) + (completeness * 0.15)))
+    if not has_minimum_specs(result, component_type):
+        confidence = min(confidence, 69)
+    if source == 'openwebui':
+        confidence = min(confidence, 89)
+
+    metadata = {
+        'source_name': source_display_name(source),
+        'source_trust': source_trust,
+        'match_score': match_score,
+        'spec_completeness': completeness,
+        'confidence': confidence,
+        'scraped_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+    raw_data = result.get('raw_data')
+    if not isinstance(raw_data, dict):
+        raw_data = {}
+    raw_data['_lookup_metadata'] = metadata
+    result['raw_data'] = raw_data
+    result['source_name'] = metadata['source_name']
+    result['confidence'] = confidence
+    result['scraped_at'] = metadata['scraped_at']
+    return result
+
+# Backwards-compatible private aliases used by older code/tests.
+_SOURCE_TRUST = SOURCE_TRUST
+_source_display_name = source_display_name
+_spec_completeness_score = spec_completeness_score

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Compare Hosts - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="bi bi-layout-split text-muted"></i> Host Comparison
+    </h1>
+    <a href="{{ url_for('main.hosts_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Hosts
+    </a>
+</div>
+
+<!-- Host Info Headers -->
+<div class="row g-4 mb-4">
+    {% for host, cost in [(host_a, cost_a), (host_b, cost_b)] %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-pc-display text-muted"></i> {{ host.hostname }}
+                </h5>
+                <span class="badge bg-{{ 'success' if host.status == 'Active' else 'warning' if host.status == 'Planned' else 'secondary' }}">
+                    {{ host.status }}
+                </span>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    {% if host.purpose %}
+                    <tr><th style="width:40%">Purpose</th><td>{{ host.purpose }}</td></tr>
+                    {% endif %}
+                    {% if host.os %}
+                    <tr><th>OS</th><td>{{ host.os }}</td></tr>
+                    {% endif %}
+                    {% if host.ip_address %}
+                    <tr><th>IP Address</th><td><code>{{ host.ip_address }}</code></td></tr>
+                    {% endif %}
+                    {% if cost %}
+                    <tr>
+                        <th>Est. Build Cost</th>
+                        <td class="text-success fw-semibold">${{ '{:,.2f}'.format(cost) }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+            <div class="card-footer bg-transparent">
+                <a href="{{ url_for('main.hosts_detail', id=host.id) }}" class="btn btn-sm btn-outline-primary">
+                    View Details
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Component Comparison Table -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="card-title mb-0">Component Comparison</h5>
+    </div>
+    <div class="card-body p-0">
+        {% if all_types %}
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3" style="width:15%">Type</th>
+                    <th style="width:40%">
+                        <i class="bi bi-pc-display text-muted"></i> {{ host_a.hostname }}
+                    </th>
+                    <th style="width:40%">
+                        <i class="bi bi-pc-display text-muted"></i> {{ host_b.hostname }}
+                    </th>
+                    <th class="pe-3" style="width:5%"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ct in all_types %}
+                {% set items_a = map_a.get(ct, []) %}
+                {% set items_b = map_b.get(ct, []) %}
+                {% set row_count = [items_a|length, items_b|length, 1]|max %}
+                {% set diff = (items_a|length != items_b|length) or
+                              (items_a and items_b and items_a[0].display_name != items_b[0].display_name) %}
+                <tr class="{{ 'table-warning' if diff else '' }}">
+                    <td class="ps-3 fw-semibold text-muted small align-top pt-2">{{ ct }}</td>
+                    <td class="align-top">
+                        {% if items_a %}
+                            {% for item in items_a %}
+                            <div class="{{ 'mb-1' if not loop.last }}">
+                                <a href="{{ url_for('main.inventory_detail', id=item.id) }}"
+                                   class="text-decoration-none small">{{ item.display_name }}</a>
+                                <span class="text-muted small">×{{ item.quantity }}</span>
+                                {% if item.purchase_price %}
+                                <br><small class="text-muted">${{ '%.2f'|format(item.purchase_price) }}/unit</small>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="align-top">
+                        {% if items_b %}
+                            {% for item in items_b %}
+                            <div class="{{ 'mb-1' if not loop.last }}">
+                                <a href="{{ url_for('main.inventory_detail', id=item.id) }}"
+                                   class="text-decoration-none small">{{ item.display_name }}</a>
+                                <span class="text-muted small">×{{ item.quantity }}</span>
+                                {% if item.purchase_price %}
+                                <br><small class="text-muted">${{ '%.2f'|format(item.purchase_price) }}/unit</small>
+                                {% endif %}
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="pe-3 align-top text-center">
+                        {% if diff %}
+                        <i class="bi bi-exclamation-circle text-warning" title="Differs"></i>
+                        {% else %}
+                        <i class="bi bi-check-circle text-success" title="Same"></i>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% if cost_a or cost_b %}
+            <tfoot class="table-light fw-semibold">
+                <tr>
+                    <td class="ps-3">Est. Total</td>
+                    <td class="text-success">{% if cost_a %}${{ '{:,.2f}'.format(cost_a) }}{% else %}—{% endif %}</td>
+                    <td class="text-success">{% if cost_b %}${{ '{:,.2f}'.format(cost_b) }}{% else %}—{% endif %}</td>
+                    <td class="pe-3"></td>
+                </tr>
+            </tfoot>
+            {% endif %}
+        </table>
+        {% else %}
+        <p class="text-muted p-3 mb-0">Neither host has any components assigned.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="mt-3 text-muted small">
+    <i class="bi bi-exclamation-circle text-warning"></i> Highlighted rows indicate differences between hosts.
+</div>
+{% endblock %}

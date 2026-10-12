@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory Breakdown - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Inventory Breakdown</h1>
+</div>
+
+{% if not breakdown_data %}
+    <p class="text-muted">No inventory data available yet.</p>
+{% endif %}
+
+<div class="row g-4">
+    {% for component_type, fields in breakdown_data.items() %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <strong>{{ component_type }}</strong>
+            </div>
+            <div class="card-body">
+                {% for field_name, rows in fields.items() %}
+                <h6 class="text-uppercase text-muted small mb-2">
+                    By {{ field_name.replace('cpu_', '').replace('mobo_', '').replace('gpu_', '').replace('ram_', '').replace('storage_', '').replace('psu_', '').replace('case_', '').replace('_', ' ')|title }}
+                </h6>
+                <table class="table table-sm table-striped mb-3">
+                    <thead>
+                        <tr>
+                            <th>Value</th>
+                            <th class="text-end">Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for value, count in rows %}
+                        <tr>
+                            <td>{{ value }}</td>
+                            <td class="text-end">{{ count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
