@@ -5,8 +5,8 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
 ## v3.8.15
-- **New:** Stream Mode. A toggle on the Lookup Settings page (`AppSetting` key `stream_mode`) hides the dashboard's "Inventory Value" card behind a `•••••` placeholder, for demoing or streaming the app without showing what your inventory is worth. Everything else — per-item prices, build costs, specs, quantities — renders normally regardless of the setting; this is purely a display mask on that one figure (`app/display.py`: `moneymask` Jinja filter). A red "Stream Mode — dollar values hidden" banner shows at the top of every page while it's on, so it's hard to forget to turn back off.
-- Tests: `tests/test_stream_mode.py` (new) — the filter itself, that the dashboard total masks when on, and that it's the only thing affected (per-item prices on the dashboard and inventory list are untouched). 274 tests.
+- **New:** Stream Mode. A toggle on the Lookup Settings page (`AppSetting` key `stream_mode`) hides the dashboard's "Inventory Value" card behind a `•••••` placeholder, for demoing or streaming the app without showing what your inventory is worth. Everything else — per-item prices, build costs, specs, quantities — renders normally regardless of the setting; this is purely a display mask on that one figure (`app/display.py`: `moneymask` Jinja filter).
+- Tests: `tests/test_stream_mode.py` (new) — the filter itself, that the dashboard total masks when on, that it's the only thing affected (per-item prices on the dashboard and inventory list are untouched), and that no banner is shown. 274 tests.
 - **Upgrade:** no schema change, no migration, no rebuild (route/template-only change — sync and `docker restart techreadout-app`).
 
 ## v3.8.13

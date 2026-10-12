@@ -115,13 +115,6 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
-    {% if stream_mode %}
-    <div class="position-fixed top-0 start-50 translate-middle-x mt-2" style="z-index: 1050;">
-        <span class="badge bg-danger px-3 py-2 shadow-sm">
-            <i class="bi bi-eye-slash"></i> Stream Mode — dollar values hidden
-        </span>
-    </div>
-    {% endif %}
     <!-- Sidebar -->
     <nav class="sidebar">
         <div class="brand">
