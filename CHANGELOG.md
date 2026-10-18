@@ -4,6 +4,10 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
+## v3.8.16
+- **Fixed:** Dashboard "Inventory by Component" chart never rendered. The Chart.js `<script>` tag's `integrity` (SRI) attribute was a malformed SHA-512 digest (decodes to 63 bytes, not the required 64), so the browser's Subresource Integrity check silently failed and blocked the script from loading — `new Chart(...)` then threw with no `Chart` global defined, leaving the chart's card body empty even though `component_counts` was populated correctly and the "View All" link worked fine. Dropped the `integrity`/`crossorigin`/`referrerpolicy` attributes from that tag, matching how every other CDN asset (Bootstrap, Bootstrap Icons) is already loaded in `base.html` with no SRI pin.
+- **Upgrade:** no schema change, no migration, no rebuild (template-only change — sync and `docker restart techreadout-app`).
+
 ## v3.8.15
 - **New:** Stream Mode. A toggle on the Lookup Settings page (`AppSetting` key `stream_mode`) hides the dashboard's "Inventory Value" card behind a `•••••` placeholder, for demoing or streaming the app without showing what your inventory is worth. Everything else — per-item prices, build costs, specs, quantities — renders normally regardless of the setting; this is purely a display mask on that one figure (`app/display.py`: `moneymask` Jinja filter).
 - Tests: `tests/test_stream_mode.py` (new) — the filter itself, that the dashboard total masks when on, that it's the only thing affected (per-item prices on the dashboard and inventory list are untouched), and that no banner is shown. 274 tests.

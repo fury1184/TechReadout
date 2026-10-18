@@ -220,9 +220,7 @@
 })();
 </script>
 {% if component_counts %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"
-        integrity="sha512-CQBWl4fJHWbryGE+Pc3UJWW1h3dK5JQKkn3ZnBqFOB2E1tK5s3+tAFKGh3bOqHFq7RlRLAz5Cqyz5i8p0v7g=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 (function () {
     const labels = [{% for name, count in component_counts %}"{{ name }}"{% if not loop.last %},{% endif %}{% endfor %}];

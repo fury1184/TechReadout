@@ -1,19 +1,13 @@
-TechReadOut v3.8.15 -- deploy steps
+TechReadOut v3.8.16 -- deploy steps
 ===================================
-What changed and why: see CHANGELOG.md, v3.8.15.
+What changed and why: see CHANGELOG.md, v3.8.16.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.13. .env is NOT included (public-safe zip).
+Built on v3.8.15. .env is NOT included (public-safe zip).
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/display.py
-  app/__init__.py
-  app/routes/scraper.py
-  app/templates/base.html
-  app/templates/scraper/settings.html
   app/templates/dashboard.html
   app/version.py
-  tests/test_stream_mode.py
   CHANGELOG.md
   PATCH_FILES.txt
 
@@ -21,20 +15,15 @@ Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
   2. docker restart techreadout-app
-  No schema change, no migration, no rebuild (route/template-only change).
+  No schema change, no migration, no rebuild (template-only change).
 
 Verify
 ------
-  1. Locally: python -m pytest  -> 274 passed.
-  2. Footer/dashboard shows TechReadOut v3.8.15.
-  3. Lookup Settings page has a new "Stream Mode" card with a toggle.
-  4. Turning it on and saving shows no banner at the top of any page.
-  5. With Stream Mode on: the dashboard's Inventory Value card shows
-     "•••••". The per-item purchase-price column on the dashboard and on
-     /inventory, and everything on host/planner pages, still show real
-     numbers -- only the dashboard total is masked.
-  6. Turn Stream Mode off and confirm the Inventory Value card shows the
-     real number again.
-  7. Other settings cards (paid fallback, eBay, Open WebUI) still save
-     correctly with Stream Mode on or off (each card re-submits the
-     others' fields as hidden inputs).
+  1. Footer/dashboard shows TechReadOut v3.8.16.
+  2. Open the Dashboard and check the browser console (F12) before this
+     fix is deployed -- you should see an SRI/integrity mismatch error
+     on chart.umd.min.js. After deploying, that error is gone.
+  3. The "Inventory by Component" card now shows a horizontal bar chart
+     (one bar per component type with inventory items), not just the
+     "View All" button and an empty body.
+  4. Hovering a bar shows a tooltip with the item count.
