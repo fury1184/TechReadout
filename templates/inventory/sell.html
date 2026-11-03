@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Mark as Sold - TechReadout{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Mark as Sold</h1>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">{{ item.display_name }}</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-5">Type</dt>
+                    <dd class="col-sm-7">{{ item.component_type.name }}</dd>
+                    
+                    <dt class="col-sm-5">Available Qty</dt>
+                    <dd class="col-sm-7"><strong>{{ item.quantity }}</strong></dd>
+                    
+                    <dt class="col-sm-5">Condition</dt>
+                    <dd class="col-sm-7">{{ item.item_condition }}</dd>
+                    
+                    {% if item.purchase_price %}
+                    <dt class="col-sm-5">Purchase Price</dt>
+                    <dd class="col-sm-7">${{ item.purchase_price }}</dd>
+                    {% endif %}
+                    
+                    {% if item.purchase_date %}
+                    <dt class="col-sm-5">Purchase Date</dt>
+                    <dd class="col-sm-7">{{ item.purchase_date }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Sale Details</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label">Quantity to Sell</label>
+                        <input type="number" name="quantity" class="form-control" 
+                               value="{{ item.quantity }}" min="1" max="{{ item.quantity }}" required>
+                        <small class="text-muted">Max: {{ item.quantity }}</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Sale Price</label>
+                        <div class="input-group">
+                            <span class="input-group-text">$</span>
+                            <input type="number" name="sale_price" class="form-control" 
+                                   step="0.01" placeholder="Total sale price" id="salePrice">
+                        </div>
+                        {% if item.purchase_price %}
+                        <small class="text-muted" id="profitHint">
+                            Cost: ${{ item.purchase_price }} — enter sale price to see profit
+                        </small>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Sale Date</label>
+                        <input type="date" name="sale_date" class="form-control" value="{{ today }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Sold To (optional)</label>
+                        <input type="text" name="sold_to" class="form-control" 
+                               placeholder="e.g., eBay, John Doe, Facebook Marketplace">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-cash"></i> Mark as Sold
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if item.purchase_price %}
+<script>
+const salePrice = document.getElementById('salePrice');
+const profitHint = document.getElementById('profitHint');
+const purchasePrice = {{ item.purchase_price }};
+
+salePrice.addEventListener('input', function() {
+    const sale = parseFloat(this.value) || 0;
+    if (sale > 0) {
+        const profit = sale - purchasePrice;
+        const sign = profit >= 0 ? '+' : '';
+        const color = profit >= 0 ? 'text-success' : 'text-danger';
+        profitHint.innerHTML = `Cost: $${purchasePrice.toFixed(2)} → <span class="${color}"><strong>${sign}$${profit.toFixed(2)}</strong></span>`;
+    } else {
+        profitHint.innerHTML = `Cost: $${purchasePrice.toFixed(2)} — enter sale price to see profit`;
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

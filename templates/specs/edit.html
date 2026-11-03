@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Edit Specs - {{ spec.display_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="h3 mb-1"><i class="bi bi-pencil-square"></i> Edit Hardware Specs</h1>
+    <div class="text-muted">{{ active_type.name if active_type else spec.component_type.name }} · {{ spec.display_name }}</div>
+  </div>
+  <a href="{{ request.args.get('next') or url_for('main.specs_list') }}" class="btn btn-outline-secondary">Cancel</a>
+</div>
+
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i>
+  Manual corrections are saved to the shared hardware spec. Every inventory item linked to this spec will immediately use the corrected values. Leave a field blank to store it as <code>null</code> / unknown.
+</div>
+
+<form method="post" class="card">
+  <div class="card-body">
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <label class="form-label" for="component_type_id">Component Type</label>
+        <select class="form-select" id="component_type_id" name="component_type_id">
+          {% for ct in component_types %}
+          <option value="{{ ct.id }}" {% if active_type and ct.id == active_type.id %}selected{% endif %}>{{ ct.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Changing type reloads the editor with the correct fields. Saving a new type clears stale fields from other component types and updates linked inventory items.</div>
+      </div>
+    </div>
+    <hr>
+    <div class="row g-3">
+      {% for field_name, label, field_type, unit in fields %}
+      <div class="col-md-6">
+        <label class="form-label" for="{{ field_name }}">{{ label }}{% if unit %} <span class="text-muted">({{ unit }})</span>{% endif %}</label>
+        {% set value = spec|attr(field_name) %}
+        {% if field_type == 'bool' %}
+        <select class="form-select" id="{{ field_name }}" name="{{ field_name }}">
+          <option value="null" {% if value is none %}selected{% endif %}>Unknown / null</option>
+          <option value="true" {% if value is sameas true %}selected{% endif %}>Yes</option>
+          <option value="false" {% if value is sameas false %}selected{% endif %}>No</option>
+        </select>
+        {% else %}
+        <input class="form-control" id="{{ field_name }}" name="{{ field_name }}"
+               type="{{ 'date' if field_type == 'date' else 'number' if field_type in ['int','decimal'] else 'text' }}"
+               {% if field_type == 'decimal' %}step="any"{% elif field_type == 'int' %}step="1"{% endif %}
+               value="{% if value is not none %}{{ value }}{% endif %}">
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <small class="text-muted">Component type: {{ active_type.name if active_type else spec.component_type.name }} · Spec ID {{ spec.id }}</small>
+    <div>
+      <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+      <a href="{{ request.args.get('next') or url_for('main.specs_list') }}" class="btn btn-secondary">Cancel</a>
+      <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Save Spec Changes</button>
+    </div>
+  </div>
+</form>
+<script>
+document.getElementById('component_type_id').addEventListener('change', function () {
+  const url = new URL(window.location.href);
+  url.searchParams.set('edit_type_id', this.value);
+  window.location.href = url.toString();
+});
+</script>
+{% endblock %}

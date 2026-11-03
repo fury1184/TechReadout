@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Normalize Names - {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-type"></i> Normalize Names</h2>
+        <div class="text-body-secondary">Preview conservative manufacturer/model cleanup before changing existing records.</div>
+    </div>
+    <a href="{{ url_for('main.inventory_list') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    Linked inventory items use their Hardware Spec name, so one spec rename updates the displayed name everywhere it is reused.
+    Nothing is changed until you select rows and click <strong>Apply Selected</strong>.
+</div>
+
+{% if proposals %}
+<form method="post">
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{{ proposals|length }} proposed cleanup{{ '' if proposals|length == 1 else 's' }}</strong>
+            <div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAll">Select All</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="selectNone">None</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th style="width: 45px;"></th>
+                        <th>Type</th>
+                        <th>Current Name</th>
+                        <th>Proposed Name</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in proposals %}
+                    <tr>
+                        <td>
+                            <input class="form-check-input normalize-check" type="checkbox" name="selected"
+                                   value="{{ p.record_type }}:{{ p.record_id }}" id="p{{ loop.index }}">
+                        </td>
+                        <td>
+                            <label for="p{{ loop.index }}" class="d-block">
+                                <span class="badge bg-secondary">{{ p.component_type }}</span>
+                                <div class="small text-body-secondary mt-1">
+                                    {{ 'Spec' if p.record_type == 'spec' else 'Inventory' }} #{{ p.record_id }}
+                                </div>
+                            </label>
+                        </td>
+                        <td>
+                            {% if p.old_manufacturer %}<strong>{{ p.old_manufacturer }}</strong> {% endif %}{{ p.old_model }}
+                        </td>
+                        <td class="text-success">
+                            {% if p.new_manufacturer %}<strong>{{ p.new_manufacturer }}</strong> {% endif %}{{ p.new_model }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <span class="text-body-secondary small">Review the suggestions; manually entered names are never changed unless selected.</span>
+            <button type="submit" class="btn btn-success" onclick="return confirm('Apply the selected name changes?');">
+                <i class="bi bi-check2-circle"></i> Apply Selected
+            </button>
+        </div>
+    </div>
+</form>
+{% else %}
+<div class="alert alert-success">
+    <i class="bi bi-check-circle"></i> No existing names need conservative normalization.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+    const boxes = () => document.querySelectorAll('.normalize-check');
+    document.getElementById('selectAll')?.addEventListener('click', () => boxes().forEach(cb => cb.checked = true));
+    document.getElementById('selectNone')?.addEventListener('click', () => boxes().forEach(cb => cb.checked = false));
+})();
+</script>
+{% endblock %}

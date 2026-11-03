@@ -1,0 +1,12 @@
+[
+  { "component_type": "Fan", "manufacturer": "Noctua", "model": "NF-A12x25 PWM", "fan_size": 120, "fan_rpm_max": 2000, "fan_airflow": 60.1, "fan_noise": 22.6, "fan_connector": "4-pin PWM", "msrp": 29.99 },
+  { "component_type": "Fan", "manufacturer": "Noctua", "model": "NF-A14 PWM", "fan_size": 140, "fan_rpm_max": 1500, "fan_airflow": 82.5, "fan_noise": 24.6, "fan_connector": "4-pin PWM", "msrp": 29.99 },
+  { "component_type": "Fan", "manufacturer": "Noctua", "model": "NF-F12 iPPC-3000 PWM", "fan_size": 120, "fan_rpm_max": 3000, "fan_airflow": 93.4, "fan_noise": 44.4, "fan_connector": "4-pin PWM", "msrp": 29.99 },
+  { "component_type": "Fan", "manufacturer": "be quiet!", "model": "Silent Wings 4 120mm PWM", "fan_size": 120, "fan_rpm_max": 2500, "fan_airflow": 50.5, "fan_noise": 18.9, "fan_connector": "4-pin PWM", "msrp": 24.99 },
+  { "component_type": "Fan", "manufacturer": "be quiet!", "model": "Silent Wings 4 140mm PWM", "fan_size": 140, "fan_rpm_max": 1900, "fan_airflow": 68.7, "fan_noise": 19.3, "fan_connector": "4-pin PWM", "msrp": 26.99 },
+  { "component_type": "Fan", "manufacturer": "Arctic", "model": "P12 PWM PST", "fan_size": 120, "fan_rpm_max": 1800, "fan_airflow": 56.3, "fan_noise": 22.5, "fan_connector": "4-pin PWM", "msrp": 9.99 },
+  { "component_type": "Fan", "manufacturer": "Arctic", "model": "P14 PWM PST", "fan_size": 140, "fan_rpm_max": 1700, "fan_airflow": 68.1, "fan_noise": 22.5, "fan_connector": "4-pin PWM", "msrp": 11.99 },
+  { "component_type": "Fan", "manufacturer": "Corsair", "model": "LL120 RGB", "fan_size": 120, "fan_rpm_max": 1500, "fan_airflow": 43.25, "fan_noise": 24.8, "fan_connector": "4-pin PWM", "msrp": 24.99 },
+  { "component_type": "Fan", "manufacturer": "Lian Li", "model": "UNI FAN SL120 V2", "fan_size": 120, "fan_rpm_max": 1900, "fan_airflow": 49.7, "fan_noise": 26.0, "fan_connector": "4-pin PWM", "msrp": 19.99 },
+  { "component_type": "Fan", "manufacturer": "Thermalright", "model": "TL-C12C", "fan_size": 120, "fan_rpm_max": 1550, "fan_airflow": 54.0, "fan_noise": 25.6, "fan_connector": "4-pin PWM", "msrp": 7.99 }
+]
