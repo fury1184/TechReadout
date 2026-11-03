@@ -12,17 +12,26 @@ def create_app(config=None):
     SQLite URI. Production (run.py) calls create_app() with no arguments.
     """
     app = Flask(__name__)
-    
+
     # Configuration
-    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
+    secret_key = os.environ.get('SECRET_KEY')
+    if not secret_key:
+        if os.environ.get('FLASK_ENV') == 'development':
+            secret_key = 'dev-secret-key'  # fine for local dev only
+        else:
+            raise RuntimeError(
+                "SECRET_KEY environment variable is required in production. "
+                "Set it in your .env file."
+            )
+    app.config['SECRET_KEY'] = secret_key
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
-        'DATABASE_URL', 
+        'DATABASE_URL',
         'mysql+pymysql://techreadout:techreadout@localhost:3306/techreadout'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     if config:
         app.config.update(config)
-    
+
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
@@ -74,7 +83,7 @@ def create_app(config=None):
                 )
             """))
             db.session.commit()
-    
+
     # Register blueprints
     from app.routes import main, api, scraper, planner, backup, stats
     app.register_blueprint(main.bp)
@@ -83,5 +92,5 @@ def create_app(config=None):
     app.register_blueprint(planner.bp, url_prefix='/planner')
     app.register_blueprint(backup.bp, url_prefix='/backup')
     app.register_blueprint(stats.bp)
-    
+
     return app

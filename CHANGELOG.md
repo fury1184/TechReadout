@@ -4,6 +4,11 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
+## v3.8.17
+- **Changed:** Production hardening. The container now runs under gunicorn (4 workers, 120s timeout) instead of the Flask dev server, and `run.py` only enables debug when `FLASK_ENV=development`. `docker-compose.yml` sets `FLASK_ENV=production`, no longer publishes MariaDB's port 3306 to the host, and takes the database passwords, `SECRET_KEY` and `TZ` from `.env` instead of hard-coded values. The app container also mounts `${NAS_BACKUP_HOST_PATH}` at `/backup`.
+- **Changed:** `create_app()` refuses to start without `SECRET_KEY` unless `FLASK_ENV=development` (previously fell back to `dev-secret-key`).
+- **Upgrade:** add `DB_ROOT_PASSWORD`, `DB_PASSWORD`, `SECRET_KEY` and `TZ` to `.env` (see `.env.example`); compose now fails to start the stack without the passwords. An existing MariaDB volume keeps the passwords it was initialised with, so set `DB_PASSWORD` to the current `techreadout` user's password (the old default was `techreadout`) or change the password inside MariaDB to match. Rebuild the image (new gunicorn install and `CMD`): `docker compose up -d --build --force-recreate`.
+
 ## v3.8.16
 - **Fixed:** Dashboard "Inventory by Component" chart never rendered. The Chart.js `<script>` tag's `integrity` (SRI) attribute was a malformed SHA-512 digest (decodes to 63 bytes, not the required 64), so the browser's Subresource Integrity check silently failed and blocked the script from loading — `new Chart(...)` then threw with no `Chart` global defined, leaving the chart's card body empty even though `component_counts` was populated correctly and the "View All" link worked fine. Dropped the `integrity`/`crossorigin`/`referrerpolicy` attributes from that tag, matching how every other CDN asset (Bootstrap, Bootstrap Icons) is already loaded in `base.html` with no SRI pin.
 - **Upgrade:** no schema change, no migration, no rebuild (template-only change — sync and `docker restart techreadout-app`).
