@@ -16,7 +16,8 @@ def create_app(config=None):
     # Configuration
     secret_key = os.environ.get('SECRET_KEY')
     if not secret_key:
-        if os.environ.get('FLASK_ENV') == 'development':
+        if (os.environ.get('FLASK_ENV') == 'development'
+                or (config and (config.get('TESTING') or config.get('SECRET_KEY')))):
             secret_key = 'dev-secret-key'  # fine for local dev only
         else:
             raise RuntimeError(
