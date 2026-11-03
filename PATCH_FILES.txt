@@ -1,33 +1,25 @@
-TechReadOut v3.8.17 -- deploy steps
+TechReadOut v3.8.18 -- deploy steps
 ===================================
-What changed and why: see CHANGELOG.md, v3.8.17.
+What changed and why: see CHANGELOG.md, v3.8.18.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.16. .env is NOT included (public-safe zip).
+Built on v3.8.17.
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  .env.example
-  Dockerfile
-  docker-compose.yml
-  run.py
-  app/__init__.py
+  app/routes/backup.py
   app/version.py
   CHANGELOG.md
   PATCH_FILES.txt
 
 Deploy
 ------
-  1. Edit the server's .env: add DB_ROOT_PASSWORD, DB_PASSWORD, SECRET_KEY
-     and TZ (see .env.example). DB_PASSWORD must match the existing
-     techreadout DB user's password (old default: techreadout).
-  2. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
-  3. docker compose up -d --build --force-recreate
-  Rebuild required (Dockerfile changed). No schema change, no migration.
+  1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
+  2. docker restart techreadout-app
+  No rebuild, no schema change, no migration.
 
 Verify
 ------
-  1. Footer/dashboard shows TechReadOut v3.8.17.
-  2. docker compose logs app shows gunicorn workers starting, not the
-     Flask development server warning.
-  3. The app connects to the database and loads the dashboard.
-  4. Port 3306 is no longer reachable from outside the host.
+  1. Footer/dashboard shows TechReadOut v3.8.18.
+  2. With eBay pricing enabled and credentials set, AI Import a spec with
+     "create inventory" ticked: the success message mentions eBay price
+     estimates and the new item shows a price marked as an estimate.

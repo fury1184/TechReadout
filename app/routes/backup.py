@@ -995,6 +995,38 @@ def format_csv_row(item, component_type):
     return row
 
 
+def _ebay_estimate_for_import(manufacturer, model):
+    """Per-unit eBay price estimate for an imported item, or None.
+
+    Mirrors the add-inventory form: needs the eBay setting on plus API
+    credentials, uses the 24h price cache, and never raises (a failed lookup
+    just leaves the price blank).
+    """
+    if not AppSetting.get_bool('ebay_pricing_enabled', False):
+        return None
+    if not os.environ.get('EBAY_APP_ID') or not os.environ.get('EBAY_APP_SECRET'):
+        return None
+    query = ' '.join(p for p in (manufacturer, model) if p).strip()
+    if not query:
+        return None
+    try:
+        from app.models import PriceCache
+        cached = PriceCache.get_fresh(query)
+        if cached:
+            return float(cached.ebay_price)
+        from app.scrapers import ebay as ebay_module
+        result = ebay_module.fetch_ebay_price(query)
+        db.session.add(PriceCache(
+            search_query=query,
+            ebay_price=result['price'],
+            listing_count=result['listing_count'],
+        ))
+        return float(result['price'])
+    except Exception as e:
+        print(f"[Import] eBay lookup failed for '{query}': {e}")
+        return None
+
+
 @bp.route('/import-specs-json', methods=['POST'])
 def import_specs_json():
     """
@@ -1023,8 +1055,9 @@ def import_specs_json():
         
         imported = 0
         skipped = 0
+        ebay_priced = 0
         errors = []
-        
+
         for spec_data in specs_list:
             try:
                 # Get or create component type
@@ -1154,6 +1187,11 @@ def import_specs_json():
                         quantity=qty,
                         status='Unverified'
                     )
+                    ebay_price = _ebay_estimate_for_import(manufacturer, model)
+                    if ebay_price:
+                        inventory_item.purchase_price = ebay_price
+                        inventory_item.price_is_estimate = True
+                        ebay_priced += 1
                     db.session.add(inventory_item)
                 
             except Exception as e:
@@ -1166,6 +1204,8 @@ def import_specs_json():
             msg = f'Successfully imported {imported} spec(s)!'
             if create_inventory:
                 msg += f' Also created {imported} inventory item(s).'
+                if ebay_priced:
+                    msg += f' eBay price estimates applied to {ebay_priced}.'
             flash(msg, 'success')
         if skipped > 0:
             # Show all skip reasons

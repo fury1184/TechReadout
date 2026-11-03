@@ -4,6 +4,10 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
+## v3.8.18
+- **Fixed:** AI Import (`/backup/import-specs-json`) with "create inventory" ticked never looked up an eBay price; only the Add Inventory form did. Each new inventory item now gets an eBay median price estimate stored as its `purchase_price` and flagged `price_is_estimate`. It uses the same gate as the form (eBay pricing enabled in Lookup Settings plus `EBAY_APP_ID` / `EBAY_APP_SECRET`) and the 24h `price_cache`. A failed or empty lookup leaves the price blank and does not fail the import. The success message reports how many items were priced. Imports make one eBay call per item, so large batches take longer.
+- **Upgrade:** no schema change, no migration, no rebuild (route-only change; sync and `docker restart techreadout-app`).
+
 ## v3.8.17
 - **Changed:** Production hardening. The container now runs under gunicorn (4 workers, 120s timeout) instead of the Flask dev server, and `run.py` only enables debug when `FLASK_ENV=development`. `docker-compose.yml` sets `FLASK_ENV=production`, no longer publishes MariaDB's port 3306 to the host, and takes the database passwords, `SECRET_KEY` and `TZ` from `.env` instead of hard-coded values. The app container also mounts `${NAS_BACKUP_HOST_PATH}` at `/backup`.
 - **Changed:** `create_app()` refuses to start without `SECRET_KEY` unless `FLASK_ENV=development` (previously fell back to `dev-secret-key`).
