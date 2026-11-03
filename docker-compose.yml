@@ -5,10 +5,9 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - TZ=${TZ}
-      - FLASK_ENV=production
-      - DATABASE_URL=mysql+pymysql://techreadout:${DB_PASSWORD}@db:3306/techreadout
-      - SECRET_KEY=${SECRET_KEY}
+      - FLASK_ENV=development
+      - DATABASE_URL=mysql+pymysql://techreadout:techreadout@db:3306/techreadout
+      - SECRET_KEY=change-this-in-production
       - SCRAPEDO_TOKEN=${SCRAPEDO_TOKEN}
       - EBAY_APP_ID=${EBAY_APP_ID}
       - EBAY_APP_SECRET=${EBAY_APP_SECRET}
@@ -17,7 +16,6 @@ services:
     volumes:
       - ./app:/app/app
       - ./data:/app/data
-      - ${NAS_BACKUP_HOST_PATH}:/backup
     depends_on:
       db:
         condition: service_healthy
@@ -27,13 +25,15 @@ services:
     image: mariadb:11
     container_name: techreadout-db
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=rootpassword
       - MYSQL_DATABASE=techreadout
       - MYSQL_USER=techreadout
-      - MYSQL_PASSWORD=${DB_PASSWORD}
+      - MYSQL_PASSWORD=techreadout
     volumes:
       - ./data/mariadb:/var/lib/mysql
       - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "3306:3306"
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s
@@ -60,11 +60,10 @@ services:
     volumes:
       - ./data/backups/mysqldump:/backup
     environment:
-      - TZ=${TZ}
       - MYSQL_HOST=db
       - MYSQL_PORT=3306
       - MYSQL_USER=techreadout
-      - MYSQL_PASS=${DB_PASSWORD}
+      - MYSQL_PASS=techreadout
       - MYSQL_DB=techreadout
       - MYSQLDUMP_OPTS=--single-transaction
       # Daily at 03:00 UTC
@@ -83,11 +82,10 @@ services:
     volumes:
       - ${NAS_BACKUP_HOST_PATH}:/backup
     environment:
-      - TZ=${TZ}
       - MYSQL_HOST=db
       - MYSQL_PORT=3306
       - MYSQL_USER=techreadout
-      - MYSQL_PASS=${DB_PASSWORD}
+      - MYSQL_PASS=techreadout
       - MYSQL_DB=techreadout
       - MYSQLDUMP_OPTS=--single-transaction
       - CRON_TIME=0 3 * * *
@@ -95,3 +93,4 @@ services:
       - INIT_BACKUP=1
       - GZIP_LEVEL=6
     restart: unless-stopped
+
