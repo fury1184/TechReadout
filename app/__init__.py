@@ -30,6 +30,12 @@ def create_app(config=None):
         'mysql+pymysql://techreadout:techreadout@localhost:3306/techreadout'
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Optional login password; empty/unset leaves the app open.
+    app.config['APP_PASSWORD'] = os.environ.get('APP_PASSWORD', '')
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    # Stay signed in for 30 days; the cookie renews on every visit.
+    app.config['PERMANENT_SESSION_LIFETIME'] = 60 * 60 * 24 * 30
     if config:
         app.config.update(config)
 
@@ -41,7 +47,7 @@ def create_app(config=None):
     from app.timefmt import localtime_filter
     app.jinja_env.filters['localtime'] = localtime_filter
 
-    # Stream Mode — mask dollar values on screen without touching data, v3.9.0.
+    # Stream Mode — mask dollar values on screen without touching data, v3.8.15.
     from app.display import moneymask, is_stream_mode
     app.jinja_env.filters['moneymask'] = moneymask
 
@@ -93,5 +99,13 @@ def create_app(config=None):
     app.register_blueprint(planner.bp, url_prefix='/planner')
     app.register_blueprint(backup.bp, url_prefix='/backup')
     app.register_blueprint(stats.bp)
+
+    from app import auth
+    app.register_blueprint(auth.bp)
+    app.before_request(auth.require_login)
+
+    @app.context_processor
+    def inject_auth():
+        return {'auth_enabled': auth.auth_enabled()}
 
     return app

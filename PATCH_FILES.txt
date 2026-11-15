@@ -1,25 +1,35 @@
-TechReadOut v3.8.18 -- deploy steps
-===================================
-What changed and why: see CHANGELOG.md, v3.8.18.
+TechReadOut v3.9.0 -- deploy steps
+==================================
+What changed and why: see CHANGELOG.md, v3.9.0.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.17.
+Built on v3.8.18.
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/routes/backup.py
+  app/auth.py                      (new)
+  app/templates/login.html         (new)
+  tests/test_auth.py               (new)
+  app/__init__.py
+  app/templates/base.html
   app/version.py
+  docker-compose.yml
+  .env.example
+  README.md
   CHANGELOG.md
   PATCH_FILES.txt
 
 Deploy
 ------
   1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
-  2. docker restart techreadout-app
+  2. Optional: add APP_PASSWORD=... to .env on the server.
+  3. docker compose up -d --force-recreate app
+     (compose file changed, so a plain docker restart is not enough.)
   No rebuild, no schema change, no migration.
 
 Verify
 ------
-  1. Footer/dashboard shows TechReadOut v3.8.18.
-  2. With eBay pricing enabled and credentials set, AI Import a spec with
-     "create inventory" ticked: the success message mentions eBay price
-     estimates and the new item shows a price marked as an estimate.
+  1. Footer/dashboard shows TechReadOut v3.9.0.
+  2. With APP_PASSWORD set: opening any page lands on /login; a wrong
+     password is rejected; the right one opens the dashboard and the
+     sidebar shows Log out.
+  3. With APP_PASSWORD empty: no login page, no Log out link.

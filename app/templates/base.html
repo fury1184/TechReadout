@@ -194,6 +194,11 @@
             <button type="button" class="theme-toggle mb-2" id="themeToggle" title="Toggle dark mode">
                 <i class="bi bi-moon-stars" id="themeToggleIcon"></i> <span id="themeToggleLabel">Dark mode</span>
             </button>
+            {% if auth_enabled %}
+            <a href="{{ url_for('auth.logout') }}" class="theme-toggle mb-2 d-block text-decoration-none">
+                <i class="bi bi-box-arrow-right"></i> Log out
+            </a>
+            {% endif %}
             <div>Created by <a href="https://ko-fi.com/fury1184" target="_blank">fury1184</a> &middot; Developed with AI assistance</div>
             <a href="https://ko-fi.com/fury1184" target="_blank" class="kofi-btn">
                 <i class="bi bi-cup-hot-fill"></i> Buy me a coffee

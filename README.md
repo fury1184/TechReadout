@@ -84,6 +84,7 @@ The seed importer runs automatically on first boot and populates ~258 hardware s
 | Variable | Required | Description |
 |---|---|---|
 | `SECRET_KEY` | Yes | Flask secret key |
+| `APP_PASSWORD` | No | When set, every page requires this shared password (asked once per browser; the login lasts 30 days and renews on each visit). Empty or unset leaves the app open |
 | `DATABASE_URL` | No | Defaults to MariaDB on the bundled `db` service |
 | `SCRAPEDO_TOKEN` | No | Scrape.Do API token for paid last-resort fallback |
 | `EBAY_APP_ID` | No | eBay production Client ID for price estimates |

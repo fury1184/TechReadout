@@ -4,6 +4,10 @@ All notable changes to TechReadOut. Newest first. The running version lives in `
 
 Each entry says what changed; anything you must do when upgrading (migrations, new env vars, maintenance commands) is under **Upgrade**. Per-release file lists and deploy steps are in `PATCH_FILES.txt`, which only covers the current release.
 
+## v3.9.0
+- **Added:** Optional password login. Set `APP_PASSWORD` and every page redirects to a `/login` form until the password is entered; `/api/*` returns 401 JSON instead. One shared password, no user accounts. The login lasts 30 days and renews on each visit; the sidebar has a Log out link. Wrong passwords are delayed one second and the `next` redirect only follows same-site paths. With `APP_PASSWORD` empty or unset the app is open exactly as before.
+- **Upgrade:** optional. To turn it on, add `APP_PASSWORD=...` to `.env` (see `.env.example`) and run `docker compose up -d --force-recreate app`, because `docker-compose.yml` passes the new variable. No schema change, no migration, no rebuild. The password travels in clear text over plain HTTP, so use an HTTPS reverse proxy if the app is reachable beyond your LAN.
+
 ## v3.8.18
 - **Fixed:** AI Import (`/backup/import-specs-json`) with "create inventory" ticked never looked up an eBay price; only the Add Inventory form did. Each new inventory item now gets an eBay median price estimate stored as its `purchase_price` and flagged `price_is_estimate`. It uses the same gate as the form (eBay pricing enabled in Lookup Settings plus `EBAY_APP_ID` / `EBAY_APP_SECRET`) and the 24h `price_cache`. A failed or empty lookup leaves the price blank and does not fail the import. The success message reports how many items were priced. Imports make one eBay call per item, so large batches take longer.
 - **Upgrade:** no schema change, no migration, no rebuild (route-only change; sync and `docker restart techreadout-app`).
