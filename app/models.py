@@ -237,16 +237,31 @@ class Inventory(db.Model):
     assigned_to_host_id = db.Column(db.Integer, db.ForeignKey('hosts.id'))
     
     # Price metadata
+    # price_is_estimate now describes current_value (not purchase_price):
+    # True when current_value was last set via the eBay fetch, False when
+    # entered manually.
     price_is_estimate = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Current market value, independent of what was originally paid.
+    # Set either manually or via "Fetch eBay Price" -> Apply.
+    current_value = db.Column(db.Numeric(10, 2))
+    current_value_updated_at = db.Column(db.DateTime)
 
     # Sale tracking
     sale_date = db.Column(db.Date)
     sale_price = db.Column(db.Numeric(10, 2))
     sold_to = db.Column(db.String(200))  # buyer name/platform
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    @property
+    def effective_value(self):
+        """Best available per-unit value: current_value if set, else purchase_price."""
+        if self.current_value is not None:
+            return self.current_value
+        return self.purchase_price
+
     @property
     def display_name(self):
         # Custom name takes priority (user explicitly set it)

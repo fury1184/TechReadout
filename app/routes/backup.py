@@ -252,11 +252,12 @@ def export_excel():
     summary = wb.active
     summary.title = 'Summary'
 
+    effective_value_expr = db.func.coalesce(Inventory.current_value, Inventory.purchase_price)
     inventory_value = db.session.query(
-        db.func.sum(Inventory.purchase_price * Inventory.quantity)
+        db.func.sum(effective_value_expr * Inventory.quantity)
     ).filter(
         Inventory.status.notin_(['Sold', 'Dead']),
-        Inventory.purchase_price.isnot(None)
+        effective_value_expr.isnot(None)
     ).scalar() or 0
     total_qty = db.session.query(db.func.sum(Inventory.quantity)).scalar() or 0
 
@@ -283,7 +284,7 @@ def export_excel():
     # --- Inventory sheet ---
     ws_inv = wb.create_sheet('Inventory')
     inv_headers = ['ID', 'Name', 'Type', 'Status', 'Condition', 'Qty', 'Purchase Date',
-                   'Purchase Price', 'Est.', 'Location', 'Assigned Host', 'Sale Date',
+                   'Purchase Price', 'Current Value', 'Est.', 'Location', 'Assigned Host', 'Sale Date',
                    'Sale Price', 'Sold To', 'Notes']
     inv_rows = []
     for item in Inventory.query.order_by(Inventory.id).all():
@@ -296,6 +297,7 @@ def export_excel():
             item.quantity,
             item.purchase_date.isoformat() if item.purchase_date else '',
             float(item.purchase_price) if item.purchase_price is not None else None,
+            float(item.current_value) if item.current_value is not None else None,
             'Yes' if item.price_is_estimate else '',
             item.location or '',
             item.assigned_host.hostname if item.assigned_host else '',
@@ -305,7 +307,7 @@ def export_excel():
             item.notes or '',
         ])
     style_sheet(ws_inv, inv_headers, inv_rows)
-    for col in ('H', 'M'):  # price columns
+    for col in ('H', 'I', 'N'):  # price columns (Purchase Price, Current Value, Sale Price)
         for cell in ws_inv[col][1:]:
             cell.number_format = '"$"#,##0.00'
 
@@ -585,6 +587,9 @@ def export_all_data():
             'quantity': item.quantity,
             'purchase_date': item.purchase_date.isoformat() if item.purchase_date else None,
             'purchase_price': float(item.purchase_price) if item.purchase_price else None,
+            'current_value': float(item.current_value) if item.current_value else None,
+            'current_value_updated_at': item.current_value_updated_at.isoformat() if item.current_value_updated_at else None,
+            'price_is_estimate': bool(item.price_is_estimate),
             'condition': item.item_condition,
             'location': item.location,
             'notes': item.notes,
@@ -822,6 +827,8 @@ def import_all_data(data):
                 custom_manufacturer=item_data.get('custom_manufacturer'),
                 quantity=item_data.get('quantity', 1),
                 purchase_price=item_data.get('purchase_price'),
+                current_value=item_data.get('current_value'),
+                price_is_estimate=bool(item_data.get('price_is_estimate', False)),
                 item_condition=item_data.get('condition', 'New'),
                 location=item_data.get('location'),
                 notes=item_data.get('notes'),
@@ -835,6 +842,8 @@ def import_all_data(data):
                 item.purchase_date = datetime.fromisoformat(item_data['purchase_date']).date()
             if item_data.get('sale_date'):
                 item.sale_date = datetime.fromisoformat(item_data['sale_date']).date()
+            if item_data.get('current_value_updated_at'):
+                item.current_value_updated_at = datetime.fromisoformat(item_data['current_value_updated_at'])
             enforce_assignment_status(item)
             db.session.add(item)
             db.session.flush()
@@ -1189,7 +1198,10 @@ def import_specs_json():
                     )
                     ebay_price = _ebay_estimate_for_import(manufacturer, model)
                     if ebay_price:
-                        inventory_item.purchase_price = ebay_price
+                        # No real purchase_price here (nothing was actually bought) --
+                        # this is a current-value estimate, not a cost basis.
+                        inventory_item.current_value = ebay_price
+                        inventory_item.current_value_updated_at = datetime.utcnow()
                         inventory_item.price_is_estimate = True
                         ebay_priced += 1
                     db.session.add(inventory_item)

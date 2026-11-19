@@ -78,6 +78,7 @@
                     <th>Type</th>
                     <th>Qty</th>
                     <th>Cost</th>
+                    <th>Current Value</th>
                     <th>Condition</th>
                     <th>Status</th>
                     <th>Location / Host</th>
@@ -113,7 +114,14 @@
                     <td>{{ item.quantity }}</td>
                     <td>
                         {% if item.purchase_price %}
-                        ${{ item.purchase_price }}{% if item.price_is_estimate %} <span class="badge bg-secondary" title="eBay estimate">✱</span>{% endif %}
+                        ${{ item.purchase_price }}
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if item.current_value %}
+                        ${{ item.current_value }}{% if item.price_is_estimate %} <span class="badge bg-secondary" title="eBay estimate">✱</span>{% endif %}
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}
@@ -178,7 +186,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="text-center text-muted py-4">
+                    <td colspan="9" class="text-center text-muted py-4">
                         No inventory items found.
                         <a href="{{ url_for('main.inventory_add') }}">Add your first item</a>
                     </td>

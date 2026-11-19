@@ -79,12 +79,34 @@
                         <td>
                             {% if item.purchase_price %}
                                 ${{ '%.2f'|format(item.purchase_price) }}
+                                <small class="text-muted">/ unit</small>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if item.purchase_price and item.quantity > 1 %}
+                    <tr>
+                        <th>Total Cost</th>
+                        <td class="fw-semibold">
+                            ${{ '%.2f'|format(item.purchase_price * item.quantity) }}
+                        </td>
+                    </tr>
+                    {% endif %}
+                    <tr>
+                        <th>Current Value</th>
+                        <td>
+                            {% if item.current_value %}
+                                ${{ '%.2f'|format(item.current_value) }}
                                 {% if item.price_is_estimate %}
                                     <span class="badge bg-secondary ms-1" title="eBay estimate">✱ est.</span>
                                 {% endif %}
                                 <small class="text-muted">/ unit</small>
+                                {% if item.current_value_updated_at %}
+                                <br><small class="text-muted">as of {{ item.current_value_updated_at.strftime('%Y-%m-%d') }}</small>
+                                {% endif %}
                             {% else %}
-                                <span class="text-muted">—</span>
+                                <span class="text-muted">— (not priced yet)</span>
                             {% endif %}
                             {% if ebay_enabled %}
                             <div class="mt-2">
@@ -99,7 +121,7 @@
                                     <form method="post" action="{{ url_for('main.inventory_apply_ebay_price', id=item.id) }}"
                                           class="d-inline">
                                         <input type="hidden" name="price" id="ebayApplyPrice">
-                                        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+                                        <button type="submit" class="btn btn-sm btn-primary">Apply as current value</button>
                                     </form>
                                     <button type="button" class="btn btn-sm btn-outline-secondary"
                                             onclick="document.getElementById('ebayResult').classList.add('d-none')">
@@ -113,11 +135,11 @@
                             {% endif %}
                         </td>
                     </tr>
-                    {% if item.purchase_price and item.quantity > 1 %}
+                    {% if item.current_value and item.quantity > 1 %}
                     <tr>
-                        <th>Total Cost</th>
+                        <th>Total Current Value</th>
                         <td class="fw-semibold">
-                            ${{ '%.2f'|format(item.purchase_price * item.quantity) }}
+                            ${{ '%.2f'|format(item.current_value * item.quantity) }}
                             {% if item.price_is_estimate %}
                                 <span class="badge bg-secondary ms-1" title="Based on eBay estimate">✱ est.</span>
                             {% endif %}

@@ -29,12 +29,14 @@ def _inventory_quantity_from_form(form, component_type_id, spec=None):
 @bp.route('/')
 def dashboard():
     """Dashboard with overview stats."""
-    # Total value of non-sold/dead inventory with a price set
+    # Total current value of non-sold/dead inventory (current_value if set,
+    # else purchase_price as a fallback for items never priced/fetched)
+    effective_value_expr = db.func.coalesce(Inventory.current_value, Inventory.purchase_price)
     inventory_value = db.session.query(
-        db.func.sum(Inventory.purchase_price * Inventory.quantity)
+        db.func.sum(effective_value_expr * Inventory.quantity)
     ).filter(
         Inventory.status.notin_(['Sold', 'Dead']),
-        Inventory.purchase_price.isnot(None)
+        effective_value_expr.isnot(None)
     ).scalar() or 0
 
     stats = {
@@ -404,10 +406,12 @@ def inventory_edit(id):
         item.custom_name = request.form.get('custom_name') or None
         item.custom_manufacturer = request.form.get('custom_manufacturer') or None
         item.quantity = int(request.form.get('quantity', 1))
-        new_price = request.form.get('purchase_price') or None
-        item.purchase_price = new_price
-        # Manual price entry always clears the eBay estimate flag
-        if new_price is not None:
+        item.purchase_price = request.form.get('purchase_price') or None
+        new_current_value = request.form.get('current_value') or None
+        item.current_value = new_current_value
+        if new_current_value is not None:
+            item.current_value_updated_at = datetime.utcnow()
+            # Manual entry always clears the eBay-estimate flag
             item.price_is_estimate = False
         item.item_condition = request.form.get('condition', 'New')
         item.location = request.form.get('location') or None
@@ -600,7 +604,11 @@ def inventory_fetch_ebay_price(id):
 
 @bp.route('/inventory/<int:id>/apply-ebay-price', methods=['POST'])
 def inventory_apply_ebay_price(id):
-    """Apply an eBay price estimate as the item's purchase price."""
+    """Apply an eBay price estimate as the item's current value.
+
+    This no longer touches purchase_price -- that's the original cost basis
+    and should stay intact for profit tracking on sale.
+    """
     item = Inventory.query.get_or_404(id)
     raw_price = request.form.get('price', '').strip()
     try:
@@ -611,10 +619,11 @@ def inventory_apply_ebay_price(id):
         flash('Invalid price value.', 'danger')
         return redirect(url_for('main.inventory_detail', id=id))
 
-    item.purchase_price = price
+    item.current_value = price
+    item.current_value_updated_at = datetime.utcnow()
     item.price_is_estimate = True
     db.session.commit()
-    flash(f'Purchase price set to ${price:.2f} (eBay estimate \u2731).', 'success')
+    flash(f'Current value set to ${price:.2f} (eBay estimate \u2731).', 'success')
     return redirect(url_for('main.inventory_detail', id=id))
 
 
@@ -1269,9 +1278,9 @@ def hosts_list():
     build_costs = {}
     for host in hosts:
         total = sum(
-            float(c.purchase_price) * c.quantity
+            float(c.effective_value) * c.quantity
             for c in host.components
-            if c.purchase_price is not None
+            if c.effective_value is not None
         )
         build_costs[host.id] = total if total > 0 else None
 
@@ -1330,8 +1339,8 @@ def hosts_compare():
     map_a = by_type(components_a)
     map_b = by_type(components_b)
 
-    cost_a = sum(float(c.purchase_price) * c.quantity for c in components_a if c.purchase_price) or None
-    cost_b = sum(float(c.purchase_price) * c.quantity for c in components_b if c.purchase_price) or None
+    cost_a = sum(float(c.effective_value) * c.quantity for c in components_a if c.effective_value) or None
+    cost_b = sum(float(c.effective_value) * c.quantity for c in components_b if c.effective_value) or None
 
     return render_template('hosts/compare.html',
                            host_a=host_a, host_b=host_b,
@@ -1347,9 +1356,9 @@ def hosts_detail(id):
     components = Inventory.query.filter_by(assigned_to_host_id=id).all()
 
     build_cost = sum(
-        float(c.purchase_price) * c.quantity
+        float(c.effective_value) * c.quantity
         for c in components
-        if c.purchase_price is not None
+        if c.effective_value is not None
     )
     build_cost = build_cost if build_cost > 0 else None
 

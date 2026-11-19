@@ -211,8 +211,8 @@
 <div class="card mt-4 border-info">
     <div class="card-body">
         <h6 class="card-title"><i class="bi bi-info-circle text-info"></i> What changed in v{{ APP_VERSION }}</h6>
-        <p class="small mb-2"><strong>Added:</strong> optional password login. Set <code>APP_PASSWORD</code> in <code>.env</code> and every page asks for it before opening; <code>/api/*</code> returns 401 until you sign in. It is one shared password with no user accounts. The login lasts 30 days and renews on each visit, and the sidebar has a Log out link. With <code>APP_PASSWORD</code> empty the app stays open as before.</p>
-        <p class="small mb-0"><strong>Upgrade:</strong> optional. Add <code>APP_PASSWORD=...</code> to <code>.env</code> and run <code>docker compose up -d --force-recreate app</code>. The password travels in clear text over plain HTTP, so use an HTTPS reverse proxy if the app is reachable beyond your LAN.</p>
+        <p class="small mb-2"><strong>Added:</strong> <code>current_value</code>, tracked separately from <code>purchase_price</code>. "Fetch eBay Price" &rarr; Apply on an inventory item now sets Current Value instead of overwriting the original purchase price, so profit on a later sale is no longer thrown off. Current Value can also be entered by hand on the Edit Inventory Item page. Host value totals (host detail, the Hosts list, and Compare Hosts) and the dashboard's Inventory Value now use Current Value, falling back to purchase price only for items that have never been priced.</p>
+        <p class="small mb-0"><strong>Upgrade:</strong> required. Run <code>migrations/v3.10.0_current_value.sql</code> against the database before syncing this release's code &mdash; it only adds two nullable columns, so no downtime or backfill is needed. No rebuild required.</p>
     </div>
 </div>
 {% endblock %}

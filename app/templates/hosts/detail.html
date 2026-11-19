@@ -150,8 +150,8 @@
                             <th>Type</th>
                             <th>Qty</th>
                             <th>Condition</th>
-                            <th>Unit Price</th>
-                            <th>Cost</th>
+                            <th>Unit Value</th>
+                            <th>Value</th>
                             <th class="pe-3"></th>
                         </tr>
                     </thead>
@@ -171,15 +171,20 @@
                                 </span>
                             </td>
                             <td>
-                                {% if item.purchase_price %}
-                                    ${{ '%.2f'|format(item.purchase_price) }}
+                                {% if item.effective_value %}
+                                    ${{ '%.2f'|format(item.effective_value) }}
+                                    {% if item.current_value is none %}
+                                        <span class="badge bg-secondary ms-1" title="No current value set yet; showing purchase price">cost</span>
+                                    {% elif item.price_is_estimate %}
+                                        <span class="badge bg-secondary ms-1" title="eBay estimate">✱</span>
+                                    {% endif %}
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}
                             </td>
                             <td>
-                                {% if item.purchase_price %}
-                                    ${{ '%.2f'|format(item.purchase_price * item.quantity) }}
+                                {% if item.effective_value %}
+                                    ${{ '%.2f'|format(item.effective_value * item.quantity) }}
                                 {% else %}
                                     <span class="text-muted">—</span>
                                 {% endif %}
@@ -198,7 +203,7 @@
                     {% if build_cost %}
                     <tfoot class="table-light fw-semibold">
                         <tr>
-                            <td class="ps-3" colspan="5">Estimated Build Cost</td>
+                            <td class="ps-3" colspan="5">Estimated Current Value</td>
                             <td class="text-success">${{ '{:,.2f}'.format(build_cost) }}</td>
                             <td class="pe-3"></td>
                         </tr>

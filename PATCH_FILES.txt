@@ -1,35 +1,49 @@
-TechReadOut v3.9.0 -- deploy steps
-==================================
-What changed and why: see CHANGELOG.md, v3.9.0.
+TechReadOut v3.10.0 -- deploy steps
+====================================
+What changed and why: see CHANGELOG.md, v3.10.0.
 This file only covers the current release and is overwritten each time.
-Built on v3.8.18.
+Built on v3.9.0.
 
 Files to sync (paths relative to repo root)
 -------------------------------------------
-  app/auth.py                      (new)
-  app/templates/login.html         (new)
-  tests/test_auth.py               (new)
-  app/__init__.py
-  app/templates/base.html
+  migrations/v3.10.0_current_value.sql  (new)
+  tests/test_current_value.py           (new)
+  app/models.py
   app/version.py
-  docker-compose.yml
-  .env.example
-  README.md
+  app/routes/main.py
+  app/routes/backup.py
+  app/templates/inventory/detail.html
+  app/templates/inventory/edit.html
+  app/templates/inventory/list.html
+  app/templates/hosts/detail.html
+  app/templates/hosts/list.html
+  app/templates/hosts/compare.html
+  app/templates/scraper/settings.html
+  migrations/init.sql
   CHANGELOG.md
   PATCH_FILES.txt
 
 Deploy
 ------
-  1. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
-  2. Optional: add APP_PASSWORD=... to .env on the server.
-  3. docker compose up -d --force-recreate app
-     (compose file changed, so a plain docker restart is not enough.)
-  No rebuild, no schema change, no migration.
+  1. Run migrations/v3.10.0_current_value.sql against the live database
+     BEFORE syncing code (adds inventory.current_value,
+     inventory.current_value_updated_at -- nullable, additive, no backfill
+     needed).
+  2. WinSCP Synchronize (Local -> Remote) onto /opt/stacks/techreadout/
+  3. docker restart techreadout-app
+     (route/template/model changes only -- no rebuild needed.)
 
 Verify
 ------
-  1. Footer/dashboard shows TechReadOut v3.9.0.
-  2. With APP_PASSWORD set: opening any page lands on /login; a wrong
-     password is rejected; the right one opens the dashboard and the
-     sidebar shows Log out.
-  3. With APP_PASSWORD empty: no login page, no Log out link.
+  1. Footer/dashboard shows TechReadOut v3.10.0.
+  2. Inventory item detail: "Purchase Price" and "Current Value" show as
+     separate rows; "Fetch eBay Price" -> Apply updates only Current Value.
+  3. Edit an item's Current Value manually; confirm the eBay-estimate
+     badge clears and Purchase Price is untouched.
+  4. A host with assigned, current-value-priced components shows the
+     updated total under "Estimated Current Value" on its detail page,
+     the Hosts list, and Compare Hosts.
+  5. Dashboard "Inventory Value" still shows a sensible total for items
+     that only have a purchase_price (no current_value fetched yet).
+  6. Lookup Settings page's "What changed in v3.10.0" card describes
+     current_value, not the old v3.9.0 password-login text.

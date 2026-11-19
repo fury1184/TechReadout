@@ -58,8 +58,18 @@
                         <span class="input-group-text">$</span>
                         <input type="number" name="purchase_price" class="form-control" step="0.01" value="{{ item.purchase_price or '' }}">
                     </div>
+                    <div class="form-text">What you paid. Used for profit on sale.</div>
                 </div>
-                
+
+                <div class="col-md-3">
+                    <label class="form-label">Current Value</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" name="current_value" class="form-control" step="0.01" value="{{ item.current_value or '' }}">
+                    </div>
+                    <div class="form-text">What it's worth now. Used for host value totals.</div>
+                </div>
+
                 <div class="col-md-3">
                     <label class="form-label">Condition</label>
                     <select name="condition" class="form-select">

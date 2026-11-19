@@ -89,8 +89,8 @@
                                 <a href="{{ url_for('main.inventory_detail', id=item.id) }}"
                                    class="text-decoration-none small">{{ item.display_name }}</a>
                                 <span class="text-muted small">×{{ item.quantity }}</span>
-                                {% if item.purchase_price %}
-                                <br><small class="text-muted">${{ '%.2f'|format(item.purchase_price) }}/unit</small>
+                                {% if item.effective_value %}
+                                <br><small class="text-muted">${{ '%.2f'|format(item.effective_value) }}/unit</small>
                                 {% endif %}
                             </div>
                             {% endfor %}
@@ -105,8 +105,8 @@
                                 <a href="{{ url_for('main.inventory_detail', id=item.id) }}"
                                    class="text-decoration-none small">{{ item.display_name }}</a>
                                 <span class="text-muted small">×{{ item.quantity }}</span>
-                                {% if item.purchase_price %}
-                                <br><small class="text-muted">${{ '%.2f'|format(item.purchase_price) }}/unit</small>
+                                {% if item.effective_value %}
+                                <br><small class="text-muted">${{ '%.2f'|format(item.effective_value) }}/unit</small>
                                 {% endif %}
                             </div>
                             {% endfor %}
@@ -127,7 +127,7 @@
             {% if cost_a or cost_b %}
             <tfoot class="table-light fw-semibold">
                 <tr>
-                    <td class="ps-3">Est. Total</td>
+                    <td class="ps-3">Est. Current Value</td>
                     <td class="text-success">{% if cost_a %}${{ '{:,.2f}'.format(cost_a) }}{% else %}—{% endif %}</td>
                     <td class="text-success">{% if cost_b %}${{ '{:,.2f}'.format(cost_b) }}{% else %}—{% endif %}</td>
                     <td class="pe-3"></td>

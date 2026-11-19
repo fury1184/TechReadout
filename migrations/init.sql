@@ -143,12 +143,16 @@ CREATE TABLE IF NOT EXISTS inventory (
     sale_price DECIMAL(10, 2),
     sold_to VARCHAR(200),
     
-    -- eBay price estimate flag (v3.1.0)
+    -- eBay price estimate flag (v3.1.0) -- now describes current_value, not purchase_price
     price_is_estimate TINYINT(1) NOT NULL DEFAULT 0,
-    
+
+    -- Current market value, separate from purchase_price (cost basis) (v3.10.0)
+    current_value DECIMAL(10, 2),
+    current_value_updated_at TIMESTAMP NULL,
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
+
     FOREIGN KEY (hardware_spec_id) REFERENCES hardware_specs(id) ON DELETE SET NULL,
     FOREIGN KEY (component_type_id) REFERENCES component_types(id)
 );
