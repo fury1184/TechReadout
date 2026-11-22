@@ -611,6 +611,10 @@ let manualEntryMode = false;
 // What the user typed before a lookup replaced it, so Clear specs can undo a
 // rejected match instead of leaving its model/manufacturer/quantity behind.
 let preLookupInput = null;
+// RAM module/stick count from the looked-up kit spec (ramModulesInput is a
+// manual-entry-only field and stays empty once a lookup hides it, so this is
+// the only place that count survives for the eBay price prompt below).
+let lookedUpRamModules = null;
 
 // ── Review modal state ────────────────────────────────────────────────────
 let _reviewModal = null;
@@ -773,6 +777,7 @@ clearSpecsBtn.addEventListener('click', function() {
     specsDisplay.style.display = 'none';
     lookedUpName.value = '';
     clearManualSpecValues();
+    lookedUpRamModules = null;
     if (preLookupInput) {
         modelInput.value = preLookupInput.model;
         manufacturerInput.value = preLookupInput.manufacturer;
@@ -843,6 +848,7 @@ modelInput.addEventListener('input', function() {
     lookupAttempted = false;
     manualEntryMode = false;
     manualSpecsSection.style.display = 'none';
+    lookedUpRamModules = null;
     scheduleDuplicateCheck();
 });
 
@@ -973,6 +979,9 @@ function applyLookupResult(data, silent = false) {
 
     if (data.component_type === 'RAM' && data.ram_modules) {
         applyRamQuantityFromModules(data.ram_modules, 'kit');
+        lookedUpRamModules = parseInt(data.ram_modules, 10) || null;
+    } else {
+        lookedUpRamModules = null;
     }
 
     const parts = buildSpecsPreview(data);
@@ -1336,20 +1345,33 @@ document.getElementById('confirmReviewBtn').addEventListener('click', async func
                 if (data.error) {
                     showEbayError(data.error);
                 } else {
+                    // This preview endpoint has no inventory item to key off,
+                    // so it always returns the raw KIT-level price. Purchase
+                    // Price is "per unit" and TechReadOut's RAM rule counts
+                    // units as physical sticks, so for a RAM kit we divide
+                    // the kit price down to a per-stick price before using it
+                    // -- otherwise one stick gets charged the whole kit's cost.
+                    const ctName = _getCtName();
+                    const manualModules = ramModulesInput ? parseInt(ramModulesInput.value, 10) : null;
+                    const sticks = (ctName === 'RAM') ? (lookedUpRamModules || manualModules || null) : null;
+                    const kitPrice = parseFloat(data.price);
+                    const unitPrice = (sticks && sticks > 1) ? (kitPrice / sticks) : kitPrice;
+
                     document.getElementById('ebayPromptModel').textContent = query;
-                    document.getElementById('ebayPromptPrice').textContent = parseFloat(data.price).toFixed(2);
+                    document.getElementById('ebayPromptPrice').textContent = unitPrice.toFixed(2);
                     document.getElementById('ebayPromptListings').textContent = data.listing_count;
-                    document.getElementById('ebayPromptCacheNote').textContent = data.cached
-                        ? 'cached ' + data.cached_at : 'live';
+                    document.getElementById('ebayPromptCacheNote').textContent =
+                        (data.cached ? 'cached ' + data.cached_at : 'live')
+                        + ((sticks && sticks > 1) ? ` — kit estimate $${kitPrice.toFixed(2)} ÷ ${sticks} sticks` : '');
                     document.getElementById('ebayPromptResult').style.display = 'block';
                     document.getElementById('ebayPromptFooter').innerHTML = `
                         <button type="button" class="btn btn-secondary btn-sm" id="ebaySkipBtn2">Skip</button>
                         <button type="button" class="btn btn-success" id="ebayUseBtn">
-                            <i class="bi bi-check-lg"></i> Use $${parseFloat(data.price).toFixed(2)}
+                            <i class="bi bi-check-lg"></i> Use $${unitPrice.toFixed(2)}
                         </button>`;
                     document.getElementById('ebaySkipBtn2').addEventListener('click', skipAndSubmit);
                     document.getElementById('ebayUseBtn').addEventListener('click', function () {
-                        purchasePriceInput.value = parseFloat(data.price).toFixed(2);
+                        purchasePriceInput.value = unitPrice.toFixed(2);
                         finallySubmit();
                     });
                 }

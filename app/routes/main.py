@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from app import db
 import os
 from app.models import ComponentType, HardwareSpec, Inventory, Host, AppSetting, LookupCache, PendingReview, PriceCache, BuildPlanComponent
-from app.inventory_rules import inventory_quantity, enforce_assignment_status
+from app.inventory_rules import inventory_quantity, enforce_assignment_status, ram_module_count
 from app.compatibility import check_inventory_items
 from app.timefmt import local_today
 from app.name_normalization import (
@@ -426,10 +426,12 @@ def inventory_edit(id):
     
     component_types = ComponentType.query.all()
     specs = HardwareSpec.query.order_by(HardwareSpec.manufacturer, HardwareSpec.model).all()
-    # Active hosts, plus the item's current host even if it isn't Active
-    # (e.g. a Planned host). Otherwise the current assignment wouldn't appear
-    # as a selectable option and a plain save would silently unassign it.
-    hosts = Host.query.filter_by(status='Active').all()
+    # Active and Planned hosts are assignable (same set offered on the
+    # dedicated Assign to Host page), plus the item's current host even if
+    # it's neither (e.g. a Decommissioned host). Otherwise the current
+    # assignment wouldn't appear as a selectable option and a plain save
+    # would silently unassign it.
+    hosts = Host.query.filter(Host.status.in_(['Active', 'Planned'])).order_by(Host.hostname).all()
     if item.assigned_to_host_id and not any(h.id == item.assigned_to_host_id for h in hosts):
         current_host = Host.query.get(item.assigned_to_host_id)
         if current_host:
@@ -566,14 +568,28 @@ def inventory_fetch_ebay_price(id):
     item = Inventory.query.get_or_404(id)
     search_query = item.display_name
 
+    # RAM listings (and this item's display_name/search query) describe the
+    # whole retail kit, but inventory quantity counts individual sticks, and
+    # may already have been split into one-row-per-stick. The cache always
+    # holds the raw kit-level price so it's reusable across every row of the
+    # same kit; here we divide it down to a per-stick price before handing
+    # it back, so it isn't applied as if one stick cost the whole kit.
+    component_type_name = item.component_type.name if item.component_type else None
+    stick_divisor = ram_module_count(component_type_name, spec=item.hardware_spec) or 1
+
+    def _per_stick(kit_price):
+        return round(kit_price / stick_divisor, 2) if stick_divisor > 1 else kit_price
+
     # Return cached result if still fresh
     cached = PriceCache.get_fresh(search_query)
     if cached:
         return jsonify({
-            'price': float(cached.ebay_price),
+            'price': _per_stick(float(cached.ebay_price)),
             'listing_count': cached.listing_count,
             'cached': True,
             'cached_at': cached.fetched_at.strftime('%Y-%m-%d %H:%M'),
+            'kit_price': float(cached.ebay_price) if stick_divisor > 1 else None,
+            'per_stick_divisor': stick_divisor if stick_divisor > 1 else None,
         })
 
     # Hit the eBay API
@@ -585,7 +601,7 @@ def inventory_fetch_ebay_price(id):
     except Exception as e:
         return jsonify({'error': f'eBay API error: {str(e)}'}), 502
 
-    # Persist to cache
+    # Persist the raw kit-level price to cache
     entry = PriceCache(
         search_query=search_query,
         ebay_price=result['price'],
@@ -595,10 +611,12 @@ def inventory_fetch_ebay_price(id):
     db.session.commit()
 
     return jsonify({
-        'price': result['price'],
+        'price': _per_stick(result['price']),
         'listing_count': result['listing_count'],
         'cached': False,
         'cached_at': None,
+        'kit_price': result['price'] if stick_divisor > 1 else None,
+        'per_stick_divisor': stick_divisor if stick_divisor > 1 else None,
     })
 
 

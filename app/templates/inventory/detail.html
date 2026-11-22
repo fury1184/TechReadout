@@ -318,8 +318,11 @@ function fetchEbayPrice(itemId) {
             const badge = data.cached
                 ? ` <small class="text-muted">(cached ${data.cached_at})</small>`
                 : ` <small class="text-muted">(${data.listing_count} listings)</small>`;
+            const kitNote = data.per_stick_divisor
+                ? ` <small class="text-muted">(kit estimate $${data.kit_price.toFixed(2)} ÷ ${data.per_stick_divisor} sticks)</small>`
+                : '';
             document.getElementById('ebayResultText').innerHTML =
-                `eBay estimate: <strong>$${data.price.toFixed(2)}</strong>${badge}`;
+                `eBay estimate: <strong>$${data.price.toFixed(2)}</strong>${kitNote}${badge}`;
             document.getElementById('ebayApplyPrice').value = data.price;
             resultDiv.classList.remove('d-none');
         })
